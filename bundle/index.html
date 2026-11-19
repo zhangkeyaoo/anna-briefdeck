@@ -7,6 +7,7 @@
   <title>汇报成稿 · BriefDeck</title>
   <link rel="stylesheet" href="./style.css">
   <script src="./vendor/pptxgen.bundle.js" defer></script>
+  <script src="./vendor/jszip.min.js" defer></script>
   <script type="module" src="./app.js"></script>
 </head>
 <body>
@@ -19,16 +20,33 @@
     <section class="brief panel" aria-labelledby="input-title">
       <div class="section-heading">
         <h1 id="input-title">准备汇报</h1>
-        <p>把项目笔记整理成可编辑的六页 PPT。</p>
+        <p>用笔记、文档和截图生成可编辑的 PPT。</p>
       </div>
-      <form id="brief-form">
-        <label for="audience">汇报对象 <span>选填</span></label>
-        <input id="audience" name="audience" maxlength="60" placeholder="例如：项目负责人">
+      <form id="brief-form" novalidate>
+        <div class="form-settings">
+          <label for="audience">汇报对象 <span>选填</span>
+            <input id="audience" name="audience" maxlength="60" placeholder="例如：项目负责人">
+          </label>
+          <div>
+            <label for="page-count">页数 <span>含封面</span></label>
+            <input id="page-count" name="page-count" type="text" inputmode="numeric" value="6" required aria-invalid="false" aria-describedby="page-count-error">
+            <p id="page-count-error" class="field-error" aria-live="polite" hidden></p>
+          </div>
+        </div>
         <label for="notes">项目笔记</label>
-        <textarea id="notes" name="notes" rows="8" required minlength="10" maxlength="4000" placeholder="粘贴本周进展、关键数据、风险和需要协调的事项…"></textarea>
+        <textarea id="notes" name="notes" rows="5" placeholder="粘贴项目笔记，或直接添加资料文件…"></textarea>
+        <div class="source-picker">
+          <button id="pick-sources" class="button secondary" type="button" aria-describedby="source-formats">选择文件</button>
+          <span id="source-formats">DOCX、TXT、PNG、JPEG</span>
+          <input id="sources" name="sources" type="file" multiple accept=".docx,.txt,.png,.jpg,.jpeg" hidden>
+        </div>
+        <details id="source-details" class="source-details" hidden>
+          <summary id="source-summary" aria-live="polite"></summary>
+          <ul id="source-list" class="source-list" aria-label="已添加资料"></ul>
+        </details>
         <div class="notes-meta">
           <button id="example" class="text-button" type="button">载入示例</button>
-          <span id="length">0 / 4000</span>
+          <span id="length">文字 0 / 6000</span>
         </div>
         <button id="generate" class="button primary" type="submit">使用 Anna 生成 <span aria-hidden="true">→</span></button>
         <p id="status" class="status" role="status" aria-live="polite">示例、编辑和下载不消耗 Anna 额度。</p>
@@ -41,7 +59,7 @@
       </div>
       <div id="stage" class="stage" data-empty="true">
         <div class="empty-slide">
-          <p>从项目笔记开始</p>
+          <p>从项目资料开始</p>
           <span>载入示例可直接体验预览、编辑和导出。</span>
         </div>
       </div>

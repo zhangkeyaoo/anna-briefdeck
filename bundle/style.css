@@ -77,6 +77,23 @@ input, textarea {
 textarea { min-height: 132px; resize: vertical; }
 input:focus, textarea:focus { border-color: #4b846e; }
 form > input { margin-bottom: 7px; }
+.form-settings { display: grid; grid-template-columns: minmax(0, 1fr) minmax(78px, .55fr); gap: 9px; }
+.form-settings input { display: block; margin-top: 5px; font-weight: 400; }
+.form-settings input[aria-invalid="true"] { border-color: #9b302e; }
+.field-error { margin-top: 4px; color: #9b302e; font-size: 12px; }
+.source-picker { display: flex; align-items: center; flex-wrap: wrap; gap: 7px 10px; }
+.source-picker span { color: #53665e; font-size: 12px; }
+.source-details { border: 1px solid #d7e1d8; border-radius: 8px; background: #f8faf6; }
+.source-details > summary { padding: 7px 9px; color: #395349; cursor: pointer; font-size: 12px; font-weight: 700; border-radius: 7px; }
+.source-details > summary[data-kind="error"] { color: #9b302e; }
+.source-details > .source-list { margin: 0 7px 7px; }
+.source-list { padding: 0; margin: 0; display: grid; gap: 6px; list-style: none; }
+.source-list li { padding: 7px 9px; background: #edf3eb; border-radius: 7px; min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
+.source-list li[data-state="error"] { color: #9b302e; }
+.source-line { display: flex; justify-content: space-between; align-items: start; gap: 8px; }
+.source-list canvas { display: block; margin-block: 4px; border-radius: 3px; }
+.source-list summary { cursor: pointer; }
+.source-list details p { max-height: 120px; overflow: auto; white-space: pre-wrap; }
 .notes-meta, .editor-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .notes-meta { color: #53665e; font-size: 12px; margin-bottom: 6px; }
 .text-button { border: 0; padding: 2px; color: #23614a; background: none; font-weight: 700; }
@@ -98,7 +115,7 @@ form > input { margin-bottom: 7px; }
 .button.secondary:not(:disabled):hover { background: #d5ecd1; }
 .button span { font-size: 17px; line-height: 1; }
 .status { min-height: 2.8em; font-size: 12px; color: #53665e; overflow-wrap: anywhere; }
-.status[data-kind="error"] { color: #9b302e; }
+[data-kind="error"] { color: #9b302e; }
 .status[data-kind="success"] { color: #23614a; }
 
 .editor-header { margin-bottom: 13px; }

@@ -12,4 +12,12 @@ await copyFile(
   path("node_modules/pptxgenjs/LICENSE"),
   path("release/bundle/vendor/pptxgenjs-license.txt")
 );
+await copyFile(
+  path("node_modules/jszip/dist/jszip.min.js"),
+  path("release/bundle/vendor/jszip.min.js")
+);
+await copyFile(
+  path("node_modules/jszip/LICENSE.markdown"),
+  path("release/bundle/vendor/jszip-license.txt")
+);
 console.log("Anna UI bundle: release/bundle");

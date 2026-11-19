@@ -14,7 +14,7 @@ function text(value, x, y, w, h, size, color, bold = false) {
   return { kind: "text", value, x, y, w, h, size, color, bold };
 }
 
-export function slideLayout(slide, index, section, total) {
+export function slideLayout(slide, index, total) {
   const page = `${String(index + 1).padStart(2, "0")} / ${String(total).padStart(2, "0")}`;
   if (index === 0) {
     return {
@@ -40,7 +40,7 @@ export function slideLayout(slide, index, section, total) {
   return {
     background: palette.white,
     elements: [
-      text(section, 0.65, 0.46, 9.75, 0.44, 17, palette.muted, true),
+      text("项目进展汇报", 0.65, 0.46, 9.75, 0.44, 17, palette.muted, true),
       text(slide.title, 0.65, 0.96, 12.03, 1.32, 29, palette.forest, true),
       ...cards,
       rect(0.65, 6.65, 12.03, 0.014, palette.line),

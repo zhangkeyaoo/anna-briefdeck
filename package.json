@@ -5,12 +5,14 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node --test test/deck.test.mjs"
+    "test": "node --test test/deck.test.mjs",
+    "test:browser": "npm run build && node --test test/browser.test.mjs"
   },
   "dependencies": {
     "pptxgenjs": "4.0.1"
   },
   "devDependencies": {
-    "jszip": "3.10.2"
+    "jszip": "3.10.2",
+    "playwright-core": "1.65.1"
   }
 }
