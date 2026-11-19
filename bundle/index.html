@@ -52,8 +52,8 @@
         <textarea id="notes" name="notes" rows="5" placeholder="粘贴项目笔记，或直接添加资料文件…"></textarea>
         <div class="source-picker">
           <button id="pick-sources" class="button secondary" type="button" aria-describedby="source-formats">选择文件</button>
-          <span id="source-formats">DOCX、TXT、PNG、JPEG</span>
-          <input id="sources" name="sources" type="file" multiple accept=".docx,.txt,.png,.jpg,.jpeg" hidden>
+          <span id="source-formats">DOCX、TXT、PDF、PNG、JPEG</span>
+          <input id="sources" name="sources" type="file" multiple accept=".docx,.txt,.pdf,.png,.jpg,.jpeg" hidden>
         </div>
         <details id="source-details" class="source-details" hidden>
           <summary id="source-summary" aria-live="polite"></summary>
@@ -82,6 +82,12 @@
         <textarea id="ppt-instructions" rows="2" maxlength="300" placeholder="例如：重点讲风险和下一步，语气简明"></textarea>
         <button id="generate" class="button primary" type="submit">使用 Anna 生成 <span aria-hidden="true">→</span></button>
         <p id="status" class="status" role="status" aria-live="polite">示例、编辑和下载不消耗 Anna 额度。</p>
+        <details id="generation-diagnostic" hidden>
+          <summary>查看本次生成诊断</summary>
+          <p id="diagnostic-error"></p>
+          <pre id="diagnostic-output"></pre>
+          <button id="download-diagnostic" class="text-button" type="button">下载诊断 JSON</button>
+        </details>
       </form>
     </section>
     <section class="editor panel" aria-labelledby="editor-title">

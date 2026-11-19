@@ -1,3 +1,5 @@
+import { limits } from "./deck.js";
+
 export const sourceLimits = { perKind: 2, bytes: 5 * 1024 * 1024 };
 const maxXmlBytes = 2 * 1024 * 1024;
 const pictureTypes = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg" };
@@ -6,7 +8,7 @@ const wordNamespace = "http://schemas.openxmlformats.org/wordprocessingml/2006/m
 export function sourceKind(name) {
   const extension = name.split(".").at(-1).toLowerCase();
   if (!name.includes(".")) return undefined;
-  if (extension === "docx" || extension === "txt") return extension;
+  if (extension === "docx" || extension === "txt" || extension === "pdf") return extension;
   if (Object.hasOwn(pictureTypes, extension)) return "image";
 }
 
@@ -14,6 +16,10 @@ export async function readSource(file, kind, previewEdge = 80) {
   if (!file.size) throw new Error("文件为空。");
   if (file.size > sourceLimits.bytes) throw new Error("单个文件不能超过 5 MB。");
   if (kind === "image") return readPicture(file, previewEdge);
+  if (kind === "pdf") {
+    const { readPdf } = await import("./pdf-source.js");
+    return readPdf(file, limits.text);
+  }
   let text;
   try {
     text = kind === "docx" ? await readWord(file) : new TextDecoder("utf-8", { fatal: true }).decode(await file.arrayBuffer());

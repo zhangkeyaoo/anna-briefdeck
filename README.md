@@ -4,11 +4,11 @@ BriefDeck 是一个 Anna App。用项目笔记、Word、TXT 或截图生成 4–
 
 ## 开发里程碑
 
-当前 Anna staging 开发者测试版为 `0.1.5`，应用完整 slug 为 `@keyzhang/briefdeck`。
+当前 Anna staging 开发者测试版为 `0.1.7`，最新核对的 R1 审核绑定为 `0.1.6`。应用完整 slug 为 `@keyzhang/briefdeck`。
 
 - 已实现混合资料输入、4–12 页设置、一次调用生成、页下文字编辑及可编辑 PPTX 导出。
 - 本地单元、浏览器与 PowerPoint 桌面验收已通过。首次 staging 生成出现截断并消耗 14 CU，修复版的真实复测待完成。
-- `0.1.3` 已真实生成并导出 5 页 PPTX。 `0.1.4` 加入逐页设计和「我的 PPT」，已通过本地回归并上传 staging。真实用量与公开发布状态见交付记录。
+- `0.1.3` 已真实生成并导出 5 页 PPTX。`0.1.6` 包含 M8 PDF 与 P1 主证据布局，已取得六页真实响应。`0.1.7` 修复该响应中 focus 指标与当前建议的呈现，增加失败诊断下载。真实用量与公开发布状态见交付记录。
 
 验收证据、失败记录和额度见[测试用例](docs/TEST-CASES.md)与[交付记录](docs/DELIVERY.md)。
 
@@ -23,7 +23,7 @@ BriefDeck 是一个 Anna App。用项目笔记、Word、TXT 或截图生成 4–
 
 ## 本地运行
 
-要求 Node.js 22+ 和 npm。
+要求 Node.js 22.13+ 或 24+，以及 npm。
 
 ```sh
 npm ci

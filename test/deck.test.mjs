@@ -5,11 +5,94 @@ import PptxGenJS from "pptxgenjs";
 import { makeRequest, parseDeck, sampleDeck, sampleNotes, validPageCount } from "../bundle/deck.js";
 import { createPresentation, fileName } from "../bundle/export.js";
 import { dimensions, movePicture, placePicture, resizePicture, slideLayout, themePalette } from "../bundle/layout.js";
-import { archiveMigration, supportPilot } from "./slide-design-fixtures.mjs";
+import { archiveMigration, prioritizedPilot, supportPilot } from "./slide-design-fixtures.mjs";
+import { readFileSync } from "node:fs";
+
+const realP1Response = JSON.parse(readFileSync(new URL("./fixtures/p1-real-response.json", import.meta.url)));
 
 const response = (text, stopReason = "endTurn") => ({ content: { text }, stopReason });
 
 const deckOf = count => ({ slides: Array.from({ length: count }, (_, index) => structuredClone(sampleDeck.slides[index % 6])) });
+
+test("P1.1 replays the real six-page response and preserves every original point", async () => {
+  const deck = parseDeck(realP1Response, 6);
+  const raw = JSON.parse(realP1Response.content.text);
+  assert.deepEqual(deck.slides.map(slide => slide.points), raw.slides.map(slide => slide.points));
+  assert.equal(deck.slides[1].lead, 0);
+  assert.equal(deck.slides[5].lead, 1);
+  const metric = slideLayout(deck.slides[1], 1, 6);
+  assert.ok(metric.elements.some(item => item.value === "18 → 11 分钟" && item.size >= 29));
+  assert.ok(metric.elements.some(item => item.value === "缩短约 39%"));
+  assert.equal(metric.elements.find(item => item.field === 1).value, raw.slides[1].points[1]);
+  const decision = slideLayout(deck.slides[5], 5, 6);
+  assert.ok(decision.elements.find(item => item.field === 1).size > decision.elements.find(item => item.field === 0).size);
+  const file = await JSZip.loadAsync(await createPresentation(deck, PptxGenJS).write({ outputType: "nodebuffer" }));
+  const second = await file.file("ppt/slides/slide2.xml").async("string");
+  assert.match(second, /18 → 11 分钟/);
+  assert.match(second, /处理工单480单/);
+  assert.match(second, /未记录重大客户投诉/);
+  assert.doesNotMatch(second, /<p:pic>/);
+});
+
+test("P1.1 keeps strict cover contracts and permits no guesses about unlabelled decisions", () => {
+  for (const points of [[], ["副标题", "另一个事实"], "副标题", undefined]) {
+    const deck = JSON.parse(realP1Response.content.text);
+    deck.slides[0].points = points;
+    assert.throws(() => parseDeck(response(JSON.stringify(deck)), 6), /第 1 页的要点数量有误/);
+  }
+  const prompt = makeRequest({ notes: "", audience: "负责人", pageCount: 6 });
+  assert.equal(prompt.maxTokens, 1800);
+  const text = prompt.messages[0].content.text;
+  assert.match(text, /points 必须是恰好包含一个非空字符串的数组/);
+  assert.match(text, /正文页 points 必须是 1–3 个非空字符串的数组/);
+  assert.match(text, /资料未证明的因果关系不得写为事实/);
+  const raw = JSON.parse(realP1Response.content.text);
+  raw.slides[5].points[1] = "优先核对迁移条件。";
+  assert.equal(parseDeck(response(JSON.stringify(raw)), 6).slides[5].lead, undefined);
+  raw.slides[1].design[1][1] = "focus";
+  assert.equal(parseDeck(response(JSON.stringify(raw)), 6).slides[1].lead, undefined);
+});
+
+test("P1 moves the emphasis with Anna's lead and keeps original facts and legacy layouts", async () => {
+  const fixture = structuredClone(prioritizedPilot);
+  const leadSlide = () => parseDeck(response(JSON.stringify(fixture)), 4).slides[1];
+  const elements = slideLayout(leadSlide(), 1, 4).elements;
+  const find = value => elements.find(item => item.value === value);
+  assert.ok(find("18 → 11 分钟").size > find("480 单").size);
+  assert.ok(find("18 → 11 分钟").w > find("480 单").w);
+  assert.ok(find("缩短约 39%"));
+  assert.ok(find("本周处理 · 覆盖 2 个业务组。"));
+  assert.equal(find("首次响应中位数").field, 1);
+  assert.equal(find("人工复核覆盖率").field, 2);
+  const deck = parseDeck(response(JSON.stringify(fixture)), 4);
+  const binary = await createPresentation(deck, PptxGenJS).write({ outputType: "nodebuffer" });
+  const zipped = await JSZip.loadAsync(binary);
+  const xml = await zipped.file("ppt/slides/slide2.xml").async("string");
+  assert.match(xml, /<a:t>18 → 11 分钟<\/a:t>/);
+  assert.match(xml, /<a:t>缩短约 39%<\/a:t>/);
+  assert.doesNotMatch(xml, /首次响应中位数由 18 分钟/);
+
+  fixture.slides[1].lead = 2;
+  const changed = slideLayout(leadSlide(), 1, 4).elements;
+  assert.ok(changed.find(item => item.value === "100%").size > changed.find(item => item.value === "18 → 11 分钟").size);
+  const ordinary = { ...fixture.slides[1], lead: undefined };
+  for (const lead of [undefined, "1", -1, 3, 1.5]) {
+    fixture.slides[1].lead = lead;
+    assert.equal(leadSlide().lead, undefined);
+    assert.deepEqual(slideLayout(leadSlide(), 1, 4), slideLayout(ordinary, 1, 4));
+  }
+  fixture.slides[1].layout = "risk";
+  fixture.slides[1].lead = 1;
+  assert.equal(leadSlide().lead, undefined);
+  fixture.slides[1].layout = "metrics";
+  fixture.slides[1].points[1] = "试点由 18 分钟降至 11 分钟，仅限工作日。";
+  const qualifier = slideLayout(leadSlide(), 1, 4).elements.find(item => item.field === 1);
+  assert.match(qualifier.value, /仅限工作日/);
+  fixture.slides[1].points[1] = "响应由 0 分钟增至 11 分钟。";
+  assert.ok(!slideLayout(leadSlide(), 1, 4).elements.some(item => /^(缩短|上升|下降)约/.test(item.value ?? "")));
+  fixture.slides[1].points[1] = "响应中位数：18→11 分钟";
+  assert.ok(slideLayout(leadSlide(), 1, 4).elements.some(item => item.value === "18 → 11 分钟"));
+});
 
 test("M1.3 validates integer page counts from 4 through 12", () => {
   for (const count of [4, 5, 6, 9, 12]) assert.equal(validPageCount(count), true);
@@ -57,7 +140,7 @@ test("M1.1 and M2.2 use one bounded request with text, document and image", () =
   assert.match(mixed.messages[0].content[0].text, /"项目组"/);
   assert.match(mixed.messages[0].content[0].text, /480 单/);
   assert.match(mixed.messages[0].content[0].text, /metrics 指标/);
-  assert.match(mixed.messages[0].content[0].text, /用一句话写出结论/);
+  assert.match(mixed.messages[0].content[0].text, /正文标题写可核对的结论/);
   assert.deepEqual(mixed.messages[0].content[1], images[0]);
   assert.ok(mixed.modelPreferences);
 });

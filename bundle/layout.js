@@ -1,4 +1,4 @@
-import { designGrid } from "./slide-design.js";
+import { designGrid, primaryEvidence } from "./slide-design.js";
 
 export const dimensions = { width: 13.333333, height: 7.5 };
 export const fontFace = "Microsoft YaHei";
@@ -71,6 +71,109 @@ function metricValue(point) {
   const comparison = metricComparison(point);
   if (comparison) return `${comparison[1]} → ${comparison[3]} ${comparison[2]}`;
   return point.match(/[+-]?\d+(?:,\d{3})*(?:\.\d+)?\s*(?:[%％]|分钟|小时|秒|单|件|条|人|天|倍|万元|元)/)?.[0] ?? "";
+}
+
+function evidenceComparison(point) {
+  const match = metricComparison(point);
+  if (match) return { phrase: match[0], index: match.index, before: match[1], unit: match[2], after: match[3] };
+  const arrow = point.match(/(?<![\d.,+\-−])([+-]?\d+(?:,\d{3})*(?:\.\d+)?)\s*(分钟|小时|秒|%|％|单|件|条|人|天)?\s*→\s*([+-]?\d+(?:,\d{3})*(?:\.\d+)?)\s*(分钟|小时|秒|%|％|单|件|条|人|天)/);
+  if (!arrow || (arrow[2] && arrow[2] !== arrow[4])) return undefined;
+  return { phrase: arrow[0], index: arrow.index, before: arrow[1], unit: arrow[4], after: arrow[3] };
+}
+
+function evidenceValue(value) {
+  const comparison = evidenceComparison(value);
+  if (comparison) return `${comparison.before} → ${comparison.after} ${comparison.unit}`;
+  const matches = value.match(/[+-]?\d+(?:,\d{3})*(?:\.\d+)?\s*(?:[%％]|分钟|小时|秒|单|件|条|人|天|倍|万元|元)/g);
+  return matches?.length === 1 ? matches[0] : "";
+}
+
+function evidenceNote(point, value) {
+  if (!value) return point;
+  const core = point.trim().replace(/[。.!！]$/, "").trim();
+  if (core.replace(/\s/g, "") === value.replace(/\s/g, "")) return "";
+  // Only separate a trailing value explicitly introduced as a label.
+  const label = core.match(/^([^：:]+)[：:]\s*(.+)$/);
+  if (label && label[2].replace(/\s/g, "") === value.replace(/\s/g, "")) return label[1];
+  const comparison = evidenceComparison(core);
+  if (comparison && comparison.index + comparison.phrase.length === core.length) {
+    const context = core.slice(0, comparison.index);
+    if (!context || /[由从]\s*$/.test(context)) {
+      const label = context.replace(/[由从]\s*$/, "").trim();
+      if (!/(拟|将|计划|预计|建议)$/.test(label)) return label;
+    }
+  }
+  const clause = core.match(/^([^，、；。]+)[，；]\s*(.+)$/);
+  if (clause?.[1].endsWith(value)) {
+    const label = clause[1].slice(0, -value.length).trim();
+    if (/(处理|完成|覆盖|受理|交付|抽检|复核)$/.test(label) && !/(预计|计划|拟|目标|至少|至多|不足|不超过)/.test(label)) {
+      return `${label} · ${clause[2]}。`;
+    }
+  }
+  return point;
+}
+
+function evidenceChange(point) {
+  const comparison = evidenceComparison(point);
+  if (!comparison || /[%％]/.test(comparison.unit)) return "";
+  const before = Number(comparison.before.replaceAll(",", ""));
+  const after = Number(comparison.after.replaceAll(",", ""));
+  if (before <= 0 || after < 0 || before === after) return "";
+  if ((/降/.test(comparison.phrase) && after > before) || (/升|增/.test(comparison.phrase) && after < before)) return "";
+  const percentage = Math.round(Math.abs((after - before) / before) * 100);
+  if (percentage < 1 || percentage > 9999) return "";
+  const direction = after > before ? "上升" : /^(分钟|小时|秒)$/.test(comparison.unit) ? "缩短" : "下降";
+  return `${direction}约 ${percentage}%`;
+}
+
+function featuredMetric(points, lead, palette) {
+  const main = points[lead];
+  const value = evidenceValue(main);
+  const featured = value.length <= 24 ? value : "";
+  const w = points.length === 1 ? 12.03 : 7.55;
+  const elements = [
+    rect(0.65, 2.46, w, 3.75, palette.forest),
+    rect(0.65, 2.46, 0.065, 3.75, palette.accent),
+    text(featured, 0.98, 2.86, w - 0.66, 1.12, featured.length > 14 ? 29 : 39, palette.mint, true),
+    text(featured ? evidenceChange(main) : "", 0.98, 4.04, w - 0.66, 0.48, 19, palette.white, true),
+    editable(lead, evidenceNote(main, featured), 0.98, featured ? 4.72 : 2.8, w - 0.66,
+      featured ? 1.08 : 3.02, featured ? 16 : 24, palette.white, !featured)
+  ];
+  let row = 0;
+  for (const [field, point] of points.entries()) {
+    if (field === lead) continue;
+    const y = 2.48 + row++ * 1.88;
+    const height = points.length === 2 ? 3.73 : 1.73;
+    const metric = evidenceValue(point);
+    const shortValue = metric.length <= 14 ? metric : "";
+    elements.push(
+      rect(8.48, y + height, 4.2, 0.012, palette.line),
+      text(shortValue, 8.48, y + 0.03, 4.2, 0.55, 24, palette.heading, true),
+      editable(field, evidenceNote(point, shortValue), 8.48, y + (shortValue ? 0.64 : 0.10), 4.2,
+        height - (shortValue ? 0.7 : 0.2), 15, palette.ink)
+    );
+  }
+  return elements;
+}
+
+function decisionSummary(points, lead, palette) {
+  const support = points.map((value, field) => ({ value, field })).filter(item => item.field !== lead);
+  const width = support.length ? 7.55 : 12.03;
+  return [
+    rect(0.65, 2.46, width, 3.75, palette.forest),
+    rect(0.65, 2.46, 0.065, 3.75, palette.accent),
+    text("当前建议", 0.98, 2.72, width - 0.66, 0.4, 15, palette.mint, true),
+    editable(lead, points[lead].replace(/^当前建议[：:]\s*/, ""), 0.98, 3.35, width - 0.66, 2.46, 22, palette.white, true),
+    ...support.flatMap(({ value, field }, index) => {
+      const y = 2.48 + index * 1.88;
+      const height = support.length === 1 ? 3.73 : 1.73;
+      return [
+        text(index === 0 ? "决策条件与依据" : "补充依据", 8.48, y, 4.2, 0.4, 14, palette.muted, true),
+        editable(field, value, 8.48, y + 0.55, 4.2, height - 0.65, 17, palette.ink),
+        rect(8.48, y + height, 4.2, 0.012, palette.line)
+      ];
+    })
+  ];
 }
 
 function columns(points, metrics, palette) {
@@ -284,6 +387,10 @@ export function slideLayout(slide, index, total, style = {}) {
     };
   }
   const name = Object.hasOwn(sectionLabels, slide.layout) ? slide.layout : "summary";
+  const lead = primaryEvidence(slide);
+  const highlighted = lead !== undefined;
+  const body = highlighted ? (name === "decision" ? decisionSummary(slide.points, lead, palette) : featuredMetric(slide.points, lead, palette)) :
+    slide.design ? renderDesign(slide, palette) : bodyElements(name, slide.points, palette, slide.composition);
   return {
     name,
     background: palette.background,
@@ -291,7 +398,7 @@ export function slideLayout(slide, index, total, style = {}) {
       ...(technical ? [rect(0.36, 0.46, 0.065, 1.79, palette.accent), rect(11.93, 0.55, 0.75, 0.045, palette.accent)] : []),
       text(sectionLabels[name], 0.65, 0.46, 9.75, 0.44, 17, palette.muted, true),
       editable("title", slide.title, 0.65, 0.96, 12.03, 1.32, 29, palette.heading, true),
-      ...(slide.design ? renderDesign(slide, palette) : bodyElements(name, slide.points, palette, slide.composition)),
+      ...body,
       rect(0.65, 6.65, 12.03, 0.014, palette.line),
       text(page, 0.65, 6.8, 4, 0.36, 12, palette.muted),
       ...pictures

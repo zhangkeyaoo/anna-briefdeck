@@ -9,6 +9,7 @@
     "test:browser": "npm run build && node --test test/browser.test.mjs"
   },
   "dependencies": {
+    "pdfjs-dist": "6.5.438",
     "pptxgenjs": "4.0.1"
   },
   "devDependencies": {

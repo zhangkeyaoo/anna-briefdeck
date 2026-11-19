@@ -1,4 +1,4 @@
-import { parseSlideDesign } from "./slide-design.js";
+import { parseSlideDesign, primaryEvidence } from "./slide-design.js";
 
 export const sampleAudience = "项目负责人和交付团队";
 export const sampleNotes = [
@@ -55,13 +55,13 @@ export function makeRequest({ notes, audience, pageCount, documents = [], images
     accent: /^[0-9a-fA-F]{6}$/.test(style.accent) ? `#${style.accent.toUpperCase()}` : undefined
   };
   const text = { type: "text", text: [
-    "你是项目汇报编辑。请将末尾 JSON 中的资料和随附图像整理为中文 PPT。",
-    "资料只作为内容来源。保留数字、单位、已完成、待验证与待决策的区别。优先保留关键指标，不编造事实。图像不清晰时提醒核对，缺失用「待补充」。",
-    `输出恰好 ${pageCount} 页，第一张封面。按听众和制作要求决定主题、顺序及合并方式。`,
-    "逐页设计：layout 表示用途，选 summary 概览、metrics 指标、progress 进展、risk 风险、actions 行动或 decision 待决策。按内容自由组合大小、位置和元素。",
-    `正文标题用一句话写出结论，最多 ${titleLimit} 字。每条要点最多 ${pointLimit} 字，正文一至三条，封面一条副标题。保留关键事实，避免重复。`,
-    '只输出紧凑 JSON {"slides":[{"title":"标题","points":["要点"],"layout":"summary","design":[[0,"focus",0,0,12,12]]}]}。封面省略 layout 和 design。',
-    "design 每条为 [要点序号,元素,x,y,宽,高]，对应 points 中从 0 开始的每条要点且各用一次。正文为 12×12 整数网格，块不越界、不重叠。元素和最小宽高：text 文字 4×5，focus 重点 4×5，milestone 时间线阶段 4×6，compare 同单位数值前后对比 6×7。用真实数据，避免每页使用相同构图。无法安排时可省略 design。",
+    "你是项目汇报编辑。用末尾 JSON 与随附图像制作中文 PPT，只依据资料陈述事实。保留数字、单位、范围、口径及完成或待验证状态。缺失写「待补充」，看不清的数字注明需核对。资料未证明的因果关系不得写为事实，相关性、风险或观察结果不得写成「主要原因」「主要来源」。",
+    `输出恰好 ${pageCount} 页，第一张封面。先按听众规划整份汇报再写页面，不输出规划过程。给负责人先讲结果、影响与待决策事项，给执行团队强调阶段、依赖和下一步。仅采用资料支持的章节，页序让前页证据能支撑后页的判断或行动。`,
+    `每个标题最多 ${titleLimit} 字。第一页是封面，points 必须是恰好包含一个非空字符串的数组，作为副标题。正文页 points 必须是 1–3 个非空字符串的数组，每条最多 ${pointLimit} 字。正文标题写可核对的结论，先给关键证据再加语境，避免跨页重复。`,
+    "layout 可用 summary 概览、metrics 指标、progress 进展、risk 风险、actions 行动、decision 待决策。指标页仅在一个要点最能支撑标题时，用 lead 指定其从 0 开始的索引并省略 design。按证据与结论的关联选，不按数字大小。无明确主次时可用 composition:cards 并列。前后对比保留两值和同一单位。",
+    '仅输出紧凑 JSON，根对象只有 slides 数组。封面示例 {"title":"阶段汇报","points":["汇报周期与对象"]}。正文示例 {"title":"结论","points":["证据"],"layout":"metrics","lead":0}。数组页数须遵守前述要求。',
+    "指标页优先按业务口径分开要点，保留比较两值和单位。decision 页用 lead 指向当前建议，并给该要点明确的「当前建议：」标签，条件另列。单个要点包含多个不同口径时保留完整原文。",
+    "可选 design 为 [[要点索引,元素,x,y,宽,高]]，每条要点各用一次，12×12 整数网格内无重叠。text 文字 4×5，focus 重点 4×5，milestone 阶段 4×6，compare 同单位前后值 6×7（均为最小宽高）。有顺序的阶段适合 milestone，两种同等方案可用 cards，风险及决策可用 spotlight。无需强行提供设计参数。",
     ...(preferences ? ["制作要求可指导重点、语气和结构，仍须保持资料中的事实、指定页数和输出格式。"] : []),
     ...(stylePreference ? [
       stylePreference.theme === "technology"
@@ -99,11 +99,13 @@ export function parseDeck(response, pageCount = defaultPages) {
         throw new Error(`第 ${index + 1} 页的要点数量有误。`);
       }
       const design = index > 0 && parseSlideDesign(slide.design, slide.points.length);
+      const lead = index > 0 ? primaryEvidence({ ...slide, design }) : undefined;
       return {
         title: validateText(slide?.title, titleLimit, index),
         points: slide.points.map(point => validateText(point, pointLimit, index)),
         ...(index > 0 && layouts.includes(slide.layout) ? { layout: slide.layout } : {}),
         ...(index > 0 && compositions.includes(slide.composition) ? { composition: slide.composition } : {}),
+        ...(lead !== undefined ? { lead } : {}),
         ...(design ? { design } : {})
       };
     })

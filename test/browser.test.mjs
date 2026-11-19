@@ -5,13 +5,14 @@ import { after, before, test } from "node:test";
 import JSZip from "jszip";
 import { chromium } from "playwright-core";
 import { sampleDeck } from "../bundle/deck.js";
-import { archiveMigration, supportPilot } from "./slide-design-fixtures.mjs";
+import { archiveMigration, prioritizedPilot, supportPilot } from "./slide-design-fixtures.mjs";
 
 const origin = "https://briefdeck.test";
-const types = { html: "text/html", js: "text/javascript", css: "text/css" };
+const types = { html: "text/html", js: "text/javascript", css: "text/css", json: "application/json" };
 const chrome = "C:/Program Files/Google/Chrome/Application/chrome.exe";
 let browser;
 let wordBuffer;
+const realP1Response = JSON.parse(await readFile(new URL("./fixtures/p1-real-response.json", import.meta.url), "utf8"));
 
 before(async () => {
   const executablePath = process.env.BRIEFDECK_CHROMIUM || (existsSync(chrome) ? chrome : undefined);
@@ -30,7 +31,7 @@ async function serve(route) {
   if (pathname === "/static/anna-apps/_sdk/latest/index.js") {
     return route.fulfill({ contentType: "text/javascript", body: `
       const slides = ${JSON.stringify(sampleDeck.slides)};
-      const designFixtures = ${JSON.stringify([supportPilot, archiveMigration])};
+      const designFixtures = ${JSON.stringify([supportPilot, archiveMigration, prioritizedPilot])};
       const readStorage = () => JSON.parse(localStorage.getItem("mockAnnaStorage") ?? "{}");
       const storage = {
         async list({ prefix }) {
@@ -81,6 +82,14 @@ async function serve(route) {
             _meta: { quotaConsumed: 14, maxTokens: { effective: 1500 } }
           };
           if (window.mockOutcome === "json") return { ...response, content: { text: "broken" } };
+          if (window.mockOutcome === "real-p1") return ${JSON.stringify(realP1Response)};
+          if (window.mockOutcome === "cover-shape") {
+            const response = ${JSON.stringify(realP1Response)};
+            const parsed = JSON.parse(response.content.text);
+            parsed.slides[0].points = ["汇报周期", "覆盖范围"];
+            response.content.text = JSON.stringify(parsed);
+            return response;
+          }
           const fixture = designFixtures.find(fixture => fixture.notes === JSON.parse(input.text.split("\\n").at(-1)).notes);
           if (fixture && count === fixture.slides.length) {
             return { ...response, _meta: { quotaConsumed: 0 }, content: { text: JSON.stringify({ slides: fixture.slides }) } };
@@ -339,7 +348,7 @@ browserCase("M1.2 and M1.3 block invalid material, over-limit files, and invalid
   await frame.locator("#page-count").fill("5");
   const invalid = [
     [file("bad.docx"), /无法读取 Word/], [file("empty.txt", Buffer.alloc(0)), /文件为空/],
-    [file("broken.png"), /图片内容与格式不符/], [file("test.pdf"), /支持 DOCX/],
+    [file("broken.png"), /图片内容与格式不符/], [file("test.csv"), /支持 DOCX/],
     [file("large.txt", Buffer.alloc(5 * 1024 * 1024 + 1)), /不能超过 5 MB/]
   ];
   await upload(frame, file("ok.txt"));
@@ -362,6 +371,81 @@ browserCase("M1.2 and M1.3 block invalid material, over-limit files, and invalid
   await frame.locator("#notes").fill("");
   await submit(frame);
   await status(frame).filter({ hasText: /已生成 5 页/ }).waitFor();
+});
+
+async function pdfFixture(name) {
+  const data = await readFile(new URL(`./fixtures/pdf/${name}`, import.meta.url));
+  return file(name, data, "application/pdf");
+}
+
+browserCase("M8.1 reads Chinese PDF pages and reuses the single mixed-source generation request", async (page, frame) => {
+  const chinese = await pdfFixture("chinese.pdf");
+  const png = await picture(frame, "png");
+  await upload(frame, [chinese, file("weekly.docx", wordBuffer), png]);
+  const pdf = frame.locator("#source-list li").filter({ hasText: "chinese.pdf" });
+  await frame.locator("#source-list li:not([data-state=reading])").filter({ hasText: "chinese.pdf" }).waitFor({ state: "attached" });
+  assert.match(await pdf.textContent(), /已提取/);
+  if (await frame.locator("#source-details").getAttribute("open") === null) await frame.locator("#source-summary").click();
+  await pdf.getByText("查看提取文字").click();
+  const extracted = await pdf.locator("details p").textContent();
+  assert.match(extracted, /第 1 页\n项目一：分流试点\n客服工单共计 480 单\n首次响应由 18 分钟降至 11 分钟\n\n第 2 页\n项目二：夜班复核\n抽样覆盖 100%，扩容待决策/);
+  assert.equal((await requests(frame)).length, 0);
+  if (process.env.BRIEFDECK_M8_EVIDENCE) {
+    await page.screenshot({ path: `${process.env.BRIEFDECK_M8_EVIDENCE}/01-pdf-preview.png`, fullPage: true });
+  }
+  await submit(frame);
+  await status(frame).filter({ hasText: /已生成 6 页/ }).waitFor();
+  let calls = await requests(frame);
+  assert.equal(calls.length, 1);
+  let payload = calls[0].messages[0].content;
+  let input = JSON.parse(payload[0].text.split("\n").at(-1));
+  assert.deepEqual(input.documents.map(item => item.name), ["chinese.pdf", "weekly.docx"]);
+  assert.equal(input.documents[0].text, extracted);
+  assert.equal(payload[1].type, "image");
+  assert.equal(payload.length, 2);
+  await frame.getByRole("button", { name: "移除 weekly.docx" }).click();
+  await upload(frame, file("notes.txt", Buffer.from("附加的 TXT 资料")));
+  await frame.getByText("查看提取文字", { exact: true }).nth(1).waitFor({ state: "attached" });
+  await submit(frame);
+  await status(frame).filter({ hasText: /已生成 6 页/ }).waitFor();
+  calls = await requests(frame);
+  assert.equal(calls.length, 2);
+  payload = calls[1].messages[0].content;
+  input = JSON.parse(payload[0].text.split("\n").at(-1));
+  assert.deepEqual(input.documents.map(item => item.name), ["chinese.pdf", "notes.txt"]);
+  await frame.getByRole("button", { name: "移除 chinese.pdf" }).click();
+  assert.equal(await pdf.count(), 0);
+});
+
+browserCase("M8.2 distinguishes PDF errors and preserves good pages in mixed PDFs", async (page, frame) => {
+  await upload(frame, await pdfFixture("mixed.pdf"));
+  await frame.getByText("第 1 页没有可提取的文字，已跳过。").waitFor();
+  await frame.getByText("查看提取文字").click();
+  assert.match(await frame.locator("#source-list details p").textContent(), /^第 2 页\n第一个有效结论$/);
+  const cases = [
+    [await pdfFixture("scan.pdf"), /扫描件请先做文字识别/],
+    [await pdfFixture("encrypted.pdf"), /PDF 已加密/],
+    [file("damaged.pdf"), /无法读取 PDF/],
+    [file("large.pdf", Buffer.alloc(5 * 1024 * 1024 + 1)), /不能超过 5 MB/],
+    [await pdfFixture("too-many-pages.pdf"), /不能超过 50 页/],
+    [await pdfFixture("too-much-text.pdf"), /PDF 提取的文字超过 6,000 字/]
+  ];
+  for (const [fixture, error] of cases) {
+    await upload(frame, fixture);
+    const row = frame.locator("#source-list li").filter({ hasText: fixture.name });
+    await row.getByText(error).waitFor();
+    await submit(frame);
+    await status(frame).filter({ hasText: /先移除读取失败/ }).waitFor();
+    if (fixture.name === "scan.pdf" && process.env.BRIEFDECK_M8_EVIDENCE) {
+      await page.screenshot({ path: `${process.env.BRIEFDECK_M8_EVIDENCE}/02-scan-warning.png`, fullPage: true });
+    }
+    await row.getByRole("button", { name: `移除 ${fixture.name}` }).click();
+  }
+  assert.equal((await requests(frame)).length, 0);
+  await submit(frame);
+  await status(frame).filter({ hasText: /已生成 6 页/ }).waitFor();
+  const [request] = await requests(frame);
+  assert.match(request.messages[0].content.text, /第 2 页\\n第一个有效结论/);
 });
 
 browserCase("M2.1, M2.2 and M3.2 preserve inputs and draft on cancel and host failures", async (page, frame) => {
@@ -445,6 +529,111 @@ browserCase("M2.4 applies the same varied templates to the example and simulated
   }
   const [request] = await requests(frame);
   assert.match(request.messages[0].content.text, /metrics 指标/);
+});
+
+browserCase("P1.1 replays real metrics and recommendation, and downloads failed-cover diagnostics", async (page, frame) => {
+  await frame.locator("#notes").fill("回放已取得的真实响应");
+  await frame.evaluate(() => { window.mockOutcome = "real-p1"; });
+  await submit(frame);
+  await status(frame).filter({ hasText: /已生成 6 页/ }).waitFor();
+  const canvas = frame.locator("#stage");
+  const takeScreenshot = async name => {
+    if (process.env.BRIEFDECK_P11_EVIDENCE) await page.screenshot({
+      path: `${process.env.BRIEFDECK_P11_EVIDENCE}/${name}.png`, fullPage: true
+    });
+  };
+  await frame.getByRole("button", { name: "第 2 页", exact: true }).click();
+  assert.equal(await canvas.getByText("18 → 11 分钟", { exact: true }).count(), 1);
+  assert.match(await canvas.innerText(), /缩短约 39%[\s\S]*480单[\s\S]*92%[\s\S]*95%[\s\S]*100%/);
+  await takeScreenshot("01-real-metrics-repaired");
+  await frame.getByRole("button", { name: "第 6 页", exact: true }).click();
+  assert.equal(await canvas.getByText("当前建议", { exact: true }).count(), 1);
+  const recommendation = canvas.getByRole("button", { name: "编辑要点 2", exact: true });
+  const condition = canvas.getByRole("button", { name: "编辑要点 1", exact: true });
+  assert.ok((await recommendation.boundingBox()).width > (await condition.boundingBox()).width);
+  await takeScreenshot("02-real-decision-repaired");
+  for (const number of [2, 3, 4, 5, 6]) {
+    await frame.getByRole("button", { name: `第 ${number} 页`, exact: true }).click();
+    for (const width of [1200, 480]) {
+      await page.setViewportSize({ width, height: 900 });
+      assert.ok(await canvas.locator(".slide-text").evaluateAll(elements => elements.filter(item => item.textContent).every(item => {
+        const range = document.createRange();
+        range.selectNodeContents(item);
+        const content = range.getBoundingClientRect();
+        const box = item.getBoundingClientRect();
+        return content.top >= box.top - 1 && content.bottom <= box.bottom + 1 && content.right <= box.right + 1;
+      })), `real page ${number} fits at ${width}px`);
+    }
+  }
+  await page.setViewportSize({ width: 1200, height: 900 });
+  const downloading = page.waitForEvent("download");
+  await frame.locator("#download").click();
+  const pptx = await downloading;
+  if (process.env.BRIEFDECK_P11_OUTPUT) await pptx.saveAs(process.env.BRIEFDECK_P11_OUTPUT);
+  await frame.getByRole("button", { name: "第 2 页", exact: true }).click();
+  await editSlideText(frame, "要点 1", "首次响应时间中位数由试点前18分钟降至12分钟，处理工单480单。");
+  assert.equal(await canvas.getByText("18 → 12 分钟", { exact: true }).count(), 1);
+  await frame.evaluate(() => { window.mockOutcome = "cover-shape"; });
+  await submit(frame);
+  await status(frame).filter({ hasText: /第 1 页的要点数量有误/ }).waitFor();
+  await frame.getByText("查看本次生成诊断", { exact: true }).click();
+  await frame.locator("#generation-diagnostic").scrollIntoViewIfNeeded();
+  await takeScreenshot("03-cover-diagnostic");
+  const diagnosticDownload = page.waitForEvent("download");
+  await frame.getByRole("button", { name: "下载诊断 JSON" }).click();
+  const diagnostic = JSON.parse(await readFile(await (await diagnosticDownload).path(), "utf8"));
+  assert.match(diagnostic.error, /第 1 页的要点数量有误/);
+  assert.equal(diagnostic.response.model, "xiaomi/mimo-v2.5");
+  assert.deepEqual(JSON.parse(diagnostic.response.content.text).slides[0].points, ["汇报周期", "覆盖范围"]);
+  assert.equal(await canvas.getByText("18 → 12 分钟", { exact: true }).count(), 1);
+  assert.equal((await requests(frame)).length, 2);
+});
+
+browserCase("P1 renders the chosen lead as the most prominent evidence and keeps it editable", async (page, frame) => {
+  await frame.locator("#notes").fill(prioritizedPilot.notes);
+  await frame.locator("#audience").fill("项目负责人");
+  await frame.locator("#page-count").fill("4");
+  await submit(frame);
+  await status(frame).filter({ hasText: /已生成 4 页/ }).waitFor();
+  await frame.getByRole("button", { name: "第 2 页", exact: true }).click();
+  const canvas = frame.locator("#stage");
+  const metric = canvas.getByText("18 → 11 分钟", { exact: true });
+  const support = canvas.getByText("480 单", { exact: true });
+  assert.ok((await metric.boundingBox()).width > (await support.boundingBox()).width);
+  assert.match(await canvas.innerText(), /缩短约 39%/);
+  assert.doesNotMatch(await canvas.innerText(), /中位数由 18/);
+  assert.match(await canvas.innerText(), /覆盖 2 个业务组/);
+  const calls = await requests(frame);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].messages[0].content.text, /给负责人先讲结果/);
+  assert.equal(JSON.parse(calls[0].messages[0].content.text.split("\n").at(-1)).audience, "项目负责人");
+  if (process.env.BRIEFDECK_P1_EVIDENCE) {
+    await page.screenshot({ path: `${process.env.BRIEFDECK_P1_EVIDENCE}/01-lead-metric.png`, fullPage: true });
+  }
+  await canvas.getByRole("button", { name: "编辑要点 2", exact: true }).press("Enter");
+  const input = canvas.getByRole("textbox", { name: "要点 2编辑框" });
+  assert.equal(await input.inputValue(), prioritizedPilot.slides[1].points[1]);
+  await input.fill("仅工作日的首次响应中位数由 18 分钟降至 12 分钟。");
+  await input.press("Enter");
+  assert.match(await canvas.innerText(), /18 → 12 分钟[\s\S]*缩短约 33%[\s\S]*仅工作日/);
+  for (const width of [1200, 480]) {
+    await page.setViewportSize({ width, height: 900 });
+    const within = await canvas.locator(".slide-text").evaluateAll(items => items.filter(item => item.textContent).every(item => {
+      const range = document.createRange();
+      range.selectNodeContents(item);
+      const area = range.getBoundingClientRect();
+      const box = item.getBoundingClientRect();
+      return area.left >= box.left - 1 && area.right <= box.right + 1 && area.top >= box.top - 1 && area.bottom <= box.bottom + 1;
+    }));
+    assert.ok(within, `P1 text fits at ${width}px`);
+  }
+  const download = page.waitForEvent("download");
+  await frame.locator("#download").click();
+  const file = await download;
+  if (process.env.BRIEFDECK_P1_OUTPUT) await file.saveAs(process.env.BRIEFDECK_P1_OUTPUT);
+  const zip = await JSZip.loadAsync(await readFile(await file.path()));
+  assert.match(await zip.file("ppt/slides/slide2.xml").async("string"), /<a:t>18 → 12 分钟<\/a:t>/);
+  assert.equal((await requests(frame)).length, 1);
 });
 
 browserCase("M5.1–M5.2 render, edit and export an evidence comparison and a migration timeline", async (page, frame) => {

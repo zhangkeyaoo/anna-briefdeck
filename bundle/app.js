@@ -3,6 +3,7 @@ import { dimensions, movePicture, pictureElement, placePicture, resizePicture, s
 import { createPresentation, fileName } from "./export.js";
 import { readSlidePicture, readSource, sourceKind, sourceLimits } from "./sources.js";
 import { annaLibrary, browserLibrary, restoreDraft, snapshotDraft } from "./library.js";
+import { primaryEvidence } from "./slide-design.js";
 
 const find = id => document.getElementById(id);
 const form = find("brief-form");
@@ -32,6 +33,8 @@ const example = find("example");
 const download = find("download");
 const status = find("status");
 const replaceDialog = find("replace-dialog");
+const generationDiagnostic = find("generation-diagnostic");
+let failedGeneration;
 const library = find("library");
 const draftList = find("draft-list");
 const newDraft = find("new-draft");
@@ -280,6 +283,33 @@ function formatUsage(response) {
   return details.length ? details.join("，") + "。" : "";
 }
 
+function showGenerationDiagnostic(response, error, pageCount) {
+  failedGeneration = {
+    error: error.message, requestedPages: pageCount, recordedAt: new Date().toISOString(),
+    response: {
+      content: response.content, model: response.model, stopReason: response.stopReason, usage: response.usage,
+      _meta: {
+        quotaConsumed: response._meta?.quotaConsumed,
+        maxTokens: response._meta?.maxTokens, thinking: response._meta?.thinking
+      }
+    }
+  };
+  find("diagnostic-error").textContent = error.message;
+  find("diagnostic-output").textContent = JSON.stringify(failedGeneration, null, 2);
+  generationDiagnostic.hidden = false;
+  generationDiagnostic.open = false;
+}
+
+find("download-diagnostic").addEventListener("click", () => {
+  if (!failedGeneration) return;
+  const url = URL.createObjectURL(new Blob([JSON.stringify(failedGeneration, null, 2)], { type: "application/json" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "briefdeck-generation-diagnostic.json";
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+
 function textLength() {
   return notes.value.trim().length + sources.reduce((total, source) => total + (source.text?.length ?? 0), 0);
 }
@@ -321,6 +351,11 @@ function renderSources() {
     const state = document.createElement("p");
     state.textContent = source.error ?? (source.state === "reading" ? "读取中…" : source.text ? `已提取 ${source.text.length} 个字符` : "图片已就绪");
     row.append(line, state);
+    if (source.warning) {
+      const warning = document.createElement("p");
+      warning.textContent = source.warning;
+      row.append(warning);
+    }
     if (source.preview) row.append(source.preview);
     if (source.text) {
       const details = document.createElement("details");
@@ -343,10 +378,11 @@ async function addSource(file) {
   const source = { file, group, state: "reading" };
   sources.push(source);
   try {
-    if (!kind) throw new Error("支持 DOCX、TXT、PNG 和 JPEG。");
+    if (!kind) throw new Error("支持 DOCX、TXT、PDF、PNG 和 JPEG。");
     if (count >= sourceLimits.perKind) throw new Error(group === "image" ? "最多添加 2 张图片。" : "最多添加 2 份文档。");
     renderSources();
     Object.assign(source, await readSource(file, kind), { state: "ready" });
+    if (source.warning && sources.includes(source)) sourceDetails.open = true;
   } catch (error) {
     source.state = "error";
     source.error = error instanceof Error ? error.message : "文件读取失败。";
@@ -475,7 +511,7 @@ function enableInlineEdit(preview, element, field, slide, index) {
     input.className = "slide-editor-input";
     input.setAttribute("aria-label", `${label}编辑框`);
     input.maxLength = title ? limits.title : limits.point;
-    input.value = element.textContent;
+    input.value = title ? slide.title : slide.points[field];
     const range = document.createRange();
     range.selectNodeContents(element);
     if (input.value) {
@@ -527,6 +563,8 @@ function enableInlineEdit(preview, element, field, slide, index) {
 
 function renderSlide() {
   const slide = deck.slides[selected];
+  const lead = primaryEvidence(slide);
+  if (lead !== undefined && !Object.hasOwn(slide, "lead")) slide.lead = lead;
   const layout = slideLayout(slide, selected, deck.slides.length, slideStyle());
   const preview = document.createElement("div");
   preview.className = "slide";
@@ -764,10 +802,13 @@ form.addEventListener("submit", async event => {
   example.disabled = true;
   updatePictureControls();
   setStatus("Anna 正在整理汇报，通常需要几秒到几十秒。");
+  failedGeneration = undefined;
+  generationDiagnostic.hidden = true;
   let usage = "";
+  let response;
   try {
     const anna = await getRuntime();
-    const response = await anna.llm.complete(request);
+    response = await anna.llm.complete(request);
     usage = formatUsage(response);
     const generated = parseDeck(response, count);
     theme.value = draftStyle.theme;
@@ -778,6 +819,7 @@ form.addEventListener("submit", async event => {
     const review = images.length ? "请核对从图片读取的数字。" : "";
     setStatus(`已生成 ${count} 页。${usage}${review}`, "success");
   } catch (error) {
+    if (response && error instanceof Error) showGenerationDiagnostic(response, error, count);
     const code = [error?.data?.errorCode, error?.data?.code, error?.code, error?.message].join(" ");
     if (/APP_MODEL_NOT_VISION_CAPABLE/i.test(code)) {
       setStatus("当前 Anna 模型无法读取图片。请换用支持视觉的模型，或移除图片后再试。", "error");

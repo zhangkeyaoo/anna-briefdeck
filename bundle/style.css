@@ -9,6 +9,9 @@
 * { box-sizing: border-box; }
 body { margin: 0; }
 [hidden] { display: none !important; }
+#generation-diagnostic { font-size: 12px; overflow-wrap: anywhere; }
+#generation-diagnostic summary { cursor: pointer; }
+#diagnostic-output { white-space: pre-wrap; max-height: 240px; overflow: auto; background: #edf3eb; padding: 8px; }
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: default; opacity: .52; }

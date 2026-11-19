@@ -1,4 +1,20 @@
 export const designGrid = 12;
+
+export function primaryEvidence(slide) {
+  if (!["metrics", "decision"].includes(slide.layout)) return undefined;
+  if (Object.hasOwn(slide, "lead")) {
+    return Number.isInteger(slide.lead) && slide.lead >= 0 && slide.lead < slide.points.length
+      ? slide.lead : undefined;
+  }
+  if (slide.layout === "decision") {
+    const recommendations = slide.points.flatMap((point, index) => /^当前建议[：:]/.test(point.trim()) ? [index] : []);
+    if (recommendations.length === 1) return recommendations[0];
+    return undefined;
+  }
+  if (slide.design?.some(block => block.kind === "compare" || block.kind === "milestone")) return undefined;
+  const focus = (slide.design ?? []).filter(block => block.kind === "focus");
+  return focus.length === 1 ? focus[0].point : undefined;
+}
 const minimumSize = {
   text: [4, 5],
   focus: [4, 5],

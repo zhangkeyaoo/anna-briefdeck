@@ -1,0 +1,17 @@
+{
+  "role": "assistant",
+  "content": {
+    "type": "text",
+    "text": "{\"slides\":[{\"title\":\"客服工单智能分流试点阶段汇报\",\"points\":[\"2026年11月9日至11月15日｜覆盖售后咨询组与账户支持组\"],\"layout\":\"summary\"},{\"title\":\"首响中位数降至11分钟，准确率92%未达95%目标\",\"points\":[\"首次响应时间中位数由试点前18分钟降至11分钟，处理工单480单。\",\"自动分流准确率92%，低于95%阶段目标，差距3个百分点；人工复核覆盖率100%，未记录重大客户投诉。\"],\"layout\":\"metrics\",\"design\":[[0,\"focus\",0,4,4,5],[1,\"text\",6,4,4,5]]},{\"title\":\"11月9日至15日完成两组接入与第一阶段复盘\",\"points\":[\"11月9日完成分类规则配置与历史数据检查，11月10日、11月12日先后接入售后咨询组与账户支持组。\",\"11月13日上线分流效果监控面板，11月15日完成第一阶段试点复盘。\"],\"layout\":\"progress\",\"design\":[[0,\"milestone\",0,5,4,6],[1,\"milestone\",6,5,4,6]]},{\"title\":\"复杂工单分类不稳，样本与人工复核效果待验证\",\"points\":[\"部分复杂工单涉及多个业务类别，分类结果不稳定，构成准确率差距主要来源。\",\"样本仅来自两个业务组，尚不能证明适用于全部客服业务；100%人工复核下未验证减少审核工作量的效果。\"],\"layout\":\"risk\",\"design\":[[0,\"focus\",0,4,4,5],[1,\"focus\",6,4,4,5]]},{\"title\":\"11月22日前形成扩大试点建议，三步优化准确率\",\"points\":[\"11月18日前整理错误分类样本并优化规则，11月20日前完成第二轮准确率评估。\",\"11月22日前形成是否扩大试点范围的建议。\"],\"layout\":\"actions\",\"design\":[[0,\"milestone\",0,5,4,6],[1,\"milestone\",6,5,4,6]]},{\"title\":\"待决策：准确率达95%且稳定一周后再扩至第三组\",\"points\":[\"管理层需决策是否同意在准确率达95%且连续一周稳定后，将试点扩大至第三个业务组。\",\"当前建议：暂不全面推广，先完成准确率优化与稳定性验证。\"],\"layout\":\"decision\",\"design\":[[0,\"focus\",0,4,4,5],[1,\"text\",6,4,4,5]]}]}"
+  },
+  "model": "xiaomi/mimo-v2.5",
+  "stopReason": "endTurn",
+  "usage": { "inputTokens": 1191, "outputTokens": 585, "totalTokens": 1776, "reasoningTokens": 0 },
+  "_meta": {
+    "provider": "openrouter",
+    "latencyMs": 10925,
+    "quotaConsumed": 0.2853448275862069,
+    "maxTokens": { "requested": 1800, "effective": 1800, "limitedBy": "request" },
+    "thinking": { "requested": false, "effective": { "enabled": false }, "applied": true, "reason": "requested" }
+  }
+}
