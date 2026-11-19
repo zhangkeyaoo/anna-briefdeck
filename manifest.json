@@ -1,0 +1,13 @@
+{
+  "schema": 4,
+  "ui": {
+    "bundle": { "format": "static-spa", "entry": "index.html" },
+    "views": [{
+      "name": "main",
+      "title": "汇报成稿 BriefDeck",
+      "default": true,
+      "default_size": { "w": 1200, "h": 780 },
+      "min_size": { "w": 480, "h": 480 }
+    }]
+  }
+}

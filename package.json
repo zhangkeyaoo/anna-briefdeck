@@ -1,0 +1,16 @@
+{
+  "name": "anna-briefdeck",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test test/deck.test.mjs"
+  },
+  "dependencies": {
+    "pptxgenjs": "4.0.1"
+  },
+  "devDependencies": {
+    "jszip": "3.10.2"
+  }
+}

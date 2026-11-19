@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>汇报成稿 · BriefDeck</title>
+  <link rel="stylesheet" href="./style.css">
+  <script src="./vendor/pptxgen.bundle.js" defer></script>
+  <script type="module" src="./app.js"></script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand-icon" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div class="brand">汇报成稿 <span>BriefDeck</span></div>
+    <button id="download" class="button secondary download" type="button" disabled>下载 PPTX <span aria-hidden="true">↓</span></button>
+  </header>
+  <main class="workspace">
+    <section class="brief panel" aria-labelledby="input-title">
+      <div class="section-heading">
+        <h1 id="input-title">准备汇报</h1>
+        <p>把项目笔记整理成可编辑的六页 PPT。</p>
+      </div>
+      <form id="brief-form">
+        <label for="audience">汇报对象 <span>选填</span></label>
+        <input id="audience" name="audience" maxlength="60" placeholder="例如：项目负责人">
+        <label for="notes">项目笔记</label>
+        <textarea id="notes" name="notes" rows="8" required minlength="10" maxlength="4000" placeholder="粘贴本周进展、关键数据、风险和需要协调的事项…"></textarea>
+        <div class="notes-meta">
+          <button id="example" class="text-button" type="button">载入示例</button>
+          <span id="length">0 / 4000</span>
+        </div>
+        <button id="generate" class="button primary" type="submit">使用 Anna 生成 <span aria-hidden="true">→</span></button>
+        <p id="status" class="status" role="status" aria-live="polite">示例、编辑和下载不消耗 Anna 额度。</p>
+      </form>
+    </section>
+    <section class="editor panel" aria-labelledby="editor-title">
+      <div class="editor-header">
+        <h2 id="editor-title">幻灯片预览</h2>
+        <span id="position"></span>
+      </div>
+      <div id="stage" class="stage" data-empty="true">
+        <div class="empty-slide">
+          <p>从项目笔记开始</p>
+          <span>载入示例可直接体验预览、编辑和导出。</span>
+        </div>
+      </div>
+      <nav id="pages" class="pages" aria-label="幻灯片页面" hidden></nav>
+      <section id="fields" class="slide-fields" aria-label="编辑当前页" hidden>
+        <h3>编辑当前页</h3>
+        <div id="field-list"></div>
+      </section>
+    </section>
+  </main>
+  <dialog id="replace-dialog" aria-labelledby="replace-title">
+    <form method="dialog">
+      <h2 id="replace-title">替换当前内容</h2>
+      <p id="replace-message"></p>
+      <div class="dialog-actions">
+        <button class="button secondary" value="cancel" autofocus>取消</button>
+        <button class="button primary" value="replace">继续</button>
+      </div>
+    </form>
+  </dialog>
+</body>
+</html>

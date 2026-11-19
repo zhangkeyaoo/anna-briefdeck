@@ -1,0 +1,8 @@
+node_modules/
+.anna/
+.env
+.env.*
+credentials.json
+release/
+*.pptx
+题目.docx
