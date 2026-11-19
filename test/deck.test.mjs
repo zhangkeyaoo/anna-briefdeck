@@ -4,13 +4,75 @@ import JSZip from "jszip";
 import PptxGenJS from "pptxgenjs";
 import { makeRequest, parseDeck, sampleDeck, sampleNotes, validPageCount } from "../bundle/deck.js";
 import { createPresentation, fileName } from "../bundle/export.js";
-import { dimensions, movePicture, placePicture, resizePicture, slideLayout, themePalette } from "../bundle/layout.js";
+import { dimensions, layoutOptions, movePicture, placePicture, resizePicture, slideLayout, themePalette, withLayoutChoice } from "../bundle/layout.js";
 import { archiveMigration, prioritizedPilot, supportPilot } from "./slide-design-fixtures.mjs";
 import { readFileSync } from "node:fs";
 import { restoreDraft, snapshotDraft } from "../bundle/library.js";
 
 const realP1Response = JSON.parse(readFileSync(new URL("./fixtures/p1-real-response.json", import.meta.url)));
 const migrationExcerpt = JSON.parse(readFileSync(new URL("./fixtures/p12-migration-excerpt.json", import.meta.url)));
+
+test("P2.1 lists compatible local choices and preserves content and original design", () => {
+  const metrics = parseDeck(realP1Response, 6).slides[1];
+  const original = structuredClone(metrics);
+  assert.deepEqual(layoutOptions(metrics, 1).map(item => item.id), ["metric-focus", "metric-cards", "plain"]);
+  assert.deepEqual(layoutOptions(metrics, 0), []);
+  for (const layout of ["risk", "decision", "progress", "actions"]) assert.deepEqual(layoutOptions({ ...metrics, layout }, 1), []);
+  for (const choice of layoutOptions(metrics, 1)) {
+    const result = withLayoutChoice(metrics, 1, 6, choice.id);
+    assert.equal(result.points, metrics.points);
+    assert.equal(result.design, metrics.design);
+    assert.equal(result.title, metrics.title);
+    assert.equal(result.lead, metrics.lead);
+    const { manualLayout, ...content } = result;
+    assert.deepEqual(content, original);
+    const evidence = slideLayout(result, 1, 6).elements.find(item => item.field === 1).value;
+    assert.ok(evidence.replaceAll("\n", "").includes("人工复核覆盖率100%"));
+    assert.doesNotMatch(evidence, /\d\n\d/);
+  }
+  assert.deepEqual(metrics, original);
+  assert.throws(() => withLayoutChoice(metrics, 1, 6, "summary-focus"), /不适合/);
+  assert.throws(() => withLayoutChoice(metrics, 0, 6, "plain"), /不适合/);
+  const invalidLead = { ...metrics, lead: -1 };
+  assert.ok(!layoutOptions(invalidLead, 1).some(item => item.id === "metric-focus"));
+  const summary = { title: "阶段汇报", layout: "summary", points: ["已有结论", "下一步待验证"] };
+  assert.deepEqual(layoutOptions(summary, 1).map(item => item.id), ["summary-focus", "summary-cards", "plain"]);
+  assert.deepEqual(layoutOptions({ ...summary, points: ["单条"] }, 1).map(item => item.id), ["plain"]);
+});
+
+test("P2.3–P2.4 local layout survives history and exports shared native geometry", async () => {
+  for (const source of [parseDeck(realP1Response, 6).slides[1], { layout: "summary", title: "总结", points: ["仅工作日统计，范围限两个业务组。", "仍需核对，未作全面推广决定。", "下一阶段由负责人复核。"] }]) {
+    for (const choice of layoutOptions(source, 1)) {
+      const deck = structuredClone(sampleDeck);
+      deck.slides[1] = withLayoutChoice(source, 1, 6, choice.id);
+      const stored = snapshotDraft("p2", deck, { theme: "minimal" });
+      const restored = await restoreDraft(stored);
+      assert.deepEqual(restored, deck);
+      const rendered = slideLayout(restored.slides[1], 1, 6);
+      const textBoxes = rendered.elements.filter(item => item.kind === "text" && item.value);
+      for (let first = 0; first < textBoxes.length; first++) {
+        for (let second = first + 1; second < textBoxes.length; second++) {
+          const a = textBoxes[first], b = textBoxes[second];
+          assert.ok(a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y,
+            `${choice.id}: independent text objects must not overlap`);
+        }
+      }
+      const zip = await JSZip.loadAsync(await createPresentation(restored, PptxGenJS).write({ outputType: "nodebuffer" }));
+      const xml = await zip.file("ppt/slides/slide2.xml").async("string");
+      for (const element of rendered.elements.filter(item => item.kind === "text" && item.value)) {
+        const nativeText = [...xml.matchAll(/<a:t>(.*?)<\/a:t>/g)].map(match => match[1]).join("");
+        assert.ok(nativeText.includes(element.value.replaceAll("\n", "")), element.value);
+        assert.ok(xml.includes(`x="${Math.round(element.x * 914400)}"`));
+        assert.ok(xml.includes(`y="${Math.round(element.y * 914400)}"`));
+      }
+      assert.doesNotMatch(xml, /<p:pic>/);
+    }
+  }
+  for (const manualLayout of ["unknown", "summary-focus", null, { id: "plain" }]) {
+    const slide = parseDeck(realP1Response, 6).slides[1];
+    assert.deepEqual(slideLayout({ ...slide, manualLayout }, 1, 6), slideLayout(slide, 1, 6));
+  }
+});
 
 test("P1.2 explicit metric grammar preserves migration scope and falls back on ambiguous comparisons", async () => {
   const variants = [

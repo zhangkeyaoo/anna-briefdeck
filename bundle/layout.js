@@ -185,7 +185,7 @@ function decisionSummary(points, lead, palette) {
   ];
 }
 
-function columns(points, metrics, palette) {
+function columns(points, metrics, palette, valueReader = metricValue) {
   const width = (12.03 - 0.22 * (points.length - 1)) / points.length;
   return points.flatMap((point, i) => {
     const x = 0.65 + i * (width + 0.22);
@@ -197,7 +197,7 @@ function columns(points, metrics, palette) {
         editable(i, point, x + 0.25, 3.04, width - 0.5, 2.65, 21, palette.heading, true)
       ];
     }
-    const value = metricValue(point);
+    const value = valueReader(point);
     return [
       card,
       rect(x, 2.47, width, 0.06, palette.accent),
@@ -373,6 +373,76 @@ export function pictureElement(picture) {
   return { kind: "image", picture, ...picture.frame };
 }
 
+export function layoutOptions(slide, index) {
+  if (index === 0 || !Array.isArray(slide?.points) || slide.points.length < 1 || slide.points.length > 3) return [];
+  const name = Object.hasOwn(sectionLabels, slide.layout) ? slide.layout : "summary";
+  if (!["metrics", "summary"].includes(name)) return [];
+  const options = [];
+  if (name === "metrics") {
+    const lead = primaryEvidence(slide);
+    if (lead !== undefined && evidenceValue(slide.points[lead])) {
+      options.push({ id: "metric-focus", label: "重点指标", description: "突出原主证据，其余信息作为辅助。" });
+    }
+    if (slide.points.length > 1) options.push({ id: "metric-cards", label: "并列展示", description: "各条指标并列，保留完整口径。" });
+  } else if (slide.points.length > 1) {
+    options.push({ id: "summary-focus", label: "突出首条", description: "强调第一条内容，其余要点在侧边呈现。" });
+    options.push({ id: "summary-cards", label: "并列展示", description: "各条要点并列，适合没有明确主次的内容。" });
+  }
+  options.push({ id: "plain", label: "简洁文字", description: "按原顺序逐条展示完整文字。" });
+  return options;
+}
+
+export function withLayoutChoice(slide, index, total, choice, style = {}) {
+  if (!layoutOptions(slide, index).some(option => option.id === choice)) throw new Error("当前页面不适合这个布局，请选择其他布局。");
+  const candidate = { ...slide, manualLayout: choice };
+  const layout = slideLayout(candidate, index, total, style);
+  for (const item of layout.elements.filter(item => item.kind !== "image")) {
+    if (![item.x, item.y, item.w, item.h].every(Number.isFinite) || item.w <= 0 || item.h <= 0 ||
+        item.x < 0 || item.y < 0 || item.x + item.w > dimensions.width + 0.001 || item.y + item.h > dimensions.height + 0.001) {
+      throw new Error("该布局超出页面边界，已保留原布局。");
+    }
+  }
+  const fields = layout.elements.filter(item => Number.isInteger(item.field)).map(item => item.field).sort();
+  if (fields.length !== slide.points.length || fields.some((field, i) => field !== i)) throw new Error("该布局不能完整保留内容，已保留原布局。");
+  return candidate;
+}
+
+function manualBody(slide, index, palette) {
+  if (!layoutOptions(slide, index).some(option => option.id === slide.manualLayout)) return undefined;
+  let elements;
+  switch (slide.manualLayout) {
+    case "metric-focus": elements = featuredMetric(slide.points, primaryEvidence(slide), palette); break;
+    case "metric-cards": elements = columns(slide.points, true, palette, evidenceValue); break;
+    case "summary-focus": elements = featuredPoints(slide.points, false, palette); break;
+    case "summary-cards": elements = columns(slide.points, false, palette); break;
+    case "plain": elements = summaryRows(slide.points, palette); break;
+  }
+  return elements?.map(item => {
+    if (!Number.isInteger(item.field) || item.value.length <= 44) return item;
+    const size = item.size - (item.size >= 20 ? 2 : 1);
+    // Explicit display-only line breaks leave two full-width glyphs of wrapping margin.
+    // PowerPoint can otherwise hang Chinese punctuation outside the text frame.
+    // The editor and saved draft continue to use the unchanged original point.
+    const capacity = Math.max(1, Math.floor(item.w * 72 / size) - 2);
+    const tokens = item.value.match(/[+-]?\d+(?:[,.]\d+)*[%％]?|[A-Za-z]+|[\s\S]/gu) ?? [];
+    const lines = [];
+    let line = "";
+    for (const token of tokens) {
+      // Keep ordinary numbers/percentages together; closing punctuation may use the reserved margin.
+      const pieces = Array.from(token).length > capacity ? Array.from(token) : [token];
+      for (const piece of pieces) {
+        if (line && Array.from(line + piece).length > capacity && !/^[，。；：！？、）】]$/.test(piece)) {
+          lines.push(line);
+          line = "";
+        }
+        line += piece;
+      }
+    }
+    if (line) lines.push(line);
+    return { ...item, size, value: lines.join("\n") };
+  });
+}
+
 export function slideLayout(slide, index, total, style = {}) {
   const palette = themePalette(style.theme, style.accent);
   const technical = style.theme === "technology";
@@ -398,8 +468,8 @@ export function slideLayout(slide, index, total, style = {}) {
   const name = Object.hasOwn(sectionLabels, slide.layout) ? slide.layout : "summary";
   const lead = primaryEvidence(slide);
   const highlighted = lead !== undefined;
-  const body = highlighted ? (name === "decision" ? decisionSummary(slide.points, lead, palette) : featuredMetric(slide.points, lead, palette)) :
-    slide.design ? renderDesign(slide, palette) : bodyElements(name, slide.points, palette, slide.composition);
+  const body = manualBody(slide, index, palette) ?? (highlighted ? (name === "decision" ? decisionSummary(slide.points, lead, palette) : featuredMetric(slide.points, lead, palette)) :
+    slide.design ? renderDesign(slide, palette) : bodyElements(name, slide.points, palette, slide.composition));
   return {
     name,
     background: palette.background,

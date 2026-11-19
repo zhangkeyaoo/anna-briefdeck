@@ -1,5 +1,5 @@
 import { defaultPages, limits, makeRequest, parseDeck, sampleAudience, sampleDeck, sampleNotes, validPageCount } from "./deck.js";
-import { dimensions, movePicture, pictureElement, placePicture, resizePicture, slideLayout, themePalette } from "./layout.js";
+import { dimensions, layoutOptions, movePicture, pictureElement, placePicture, resizePicture, slideLayout, themePalette, withLayoutChoice } from "./layout.js";
 import { createPresentation, fileName } from "./export.js";
 import { readSlidePicture, readSource, sourceKind, sourceLimits } from "./sources.js";
 import { annaLibrary, browserLibrary, restoreDraft, snapshotDraft } from "./library.js";
@@ -42,6 +42,12 @@ const saveDraftButton = find("save-draft");
 const draftSaveState = find("draft-save-state");
 const deleteDialog = find("delete-dialog");
 const libraryStatus = find("library-status");
+const layoutControls = find("layout-controls");
+const layoutChoices = find("layout-options");
+const layoutUndo = find("layout-undo");
+const layoutReset = find("layout-reset");
+const layoutStatus = find("layout-status");
+const previousLayouts = new WeakMap();
 const emptyStage = stage.firstElementChild;
 const params = new URLSearchParams(location.search);
 const hosted = window.parent !== window && params.has("wid") && params.has("t");
@@ -206,6 +212,8 @@ function clearCanvas() {
   editHint.hidden = true;
   find("position").textContent = "";
   pictureStatus.textContent = "";
+  layoutControls.hidden = true;
+  layoutControls.open = false;
   updatePictureControls();
 }
 
@@ -542,6 +550,7 @@ function enableInlineEdit(preview, element, field, slide, index) {
       const next = slideLayout(slide, index, deck.slides.length, slideStyle());
       next.elements.forEach((item, i) => paintSlideElement(preview.children[i], item));
       if (save) saveCurrentDraft();
+      updateLayoutControls();
       if (refocus) element.focus({ preventScroll: true });
     }
     input.addEventListener("blur", () => finish(true), { once: true });
@@ -583,7 +592,85 @@ function renderSlide() {
   }
   stage.removeAttribute("data-empty");
   stage.replaceChildren(preview);
+  updateLayoutControls();
 }
+
+function layoutSnapshot(slide) {
+  return { present: Object.hasOwn(slide, "manualLayout"), value: slide.manualLayout };
+}
+
+function restoreLayoutSnapshot(slide, snapshot) {
+  if (snapshot.present) slide.manualLayout = snapshot.value;
+  else delete slide.manualLayout;
+}
+
+function updateLayoutControls() {
+  const slide = deck?.slides[selected];
+  const options = slide ? layoutOptions(slide, selected) : [];
+  layoutControls.hidden = options.length < 2;
+  const disabled = busy || exporting || openingDraft || Boolean(deletingDraft) || pendingPictures.has(slide);
+  find("layout-page").textContent = slide ? `第 ${selected + 1} 页` : "";
+  const current = options.find(option => option.id === slide?.manualLayout);
+  find("layout-current").textContent = `当前：${current?.label ?? "原有布局"}`;
+  layoutChoices.replaceChildren(...options.map(option => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "layout-choice";
+    button.dataset.choice = option.id;
+    button.disabled = disabled;
+    button.setAttribute("aria-label", option.label);
+    button.setAttribute("aria-pressed", String(option.id === current?.id));
+    const label = document.createElement("strong");
+    label.textContent = option.label;
+    const description = document.createElement("span");
+    description.textContent = option.description;
+    button.append(label, description);
+    // Commit an active canvas editor inside the click transaction before rebuilding options.
+    button.addEventListener("pointerdown", event => event.preventDefault());
+    button.addEventListener("click", () => changeLayout("choose", option.id));
+    return button;
+  }));
+  layoutUndo.disabled = disabled || !slide || !previousLayouts.has(slide);
+  layoutReset.disabled = disabled || !slide || !Object.hasOwn(slide, "manualLayout");
+}
+
+function changeLayout(action, choice) {
+  const slide = deck?.slides[selected];
+  if (!slide || busy || exporting || openingDraft || deletingDraft || pendingPictures.has(slide)) return;
+  finishCurrentTextEdit();
+  const before = layoutSnapshot(slide);
+  const previous = previousLayouts.get(slide);
+  try {
+    if (action === "choose") {
+      if (slide.manualLayout === choice) return;
+      const candidate = withLayoutChoice(slide, selected, deck.slides.length, choice, slideStyle());
+      slide.manualLayout = candidate.manualLayout;
+    } else if (action === "undo") {
+      if (!previous) return;
+      restoreLayoutSnapshot(slide, previous);
+    } else {
+      delete slide.manualLayout;
+    }
+    renderSlide();
+    if (action === "undo") previousLayouts.delete(slide);
+    else previousLayouts.set(slide, before);
+    layoutStatus.textContent = action === "undo" ? "已撤销上次布局切换。" : action === "reset" ? "已恢复本页原有布局。" : "已更换本页布局。";
+    layoutStatus.dataset.kind = "success";
+    layoutStatus.hidden = false;
+    updateLayoutControls();
+    if (action === "choose") layoutChoices.querySelector(`[data-choice="${choice}"]`)?.focus({ preventScroll: true });
+    saveCurrentDraft();
+  } catch (error) {
+    restoreLayoutSnapshot(slide, before);
+    renderSlide();
+    layoutStatus.textContent = error.message || "未能切换布局，已保留原布局。";
+    layoutStatus.dataset.kind = "error";
+    layoutStatus.hidden = false;
+  }
+}
+
+layoutUndo.addEventListener("click", () => changeLayout("undo"));
+layoutReset.addEventListener("click", () => changeLayout("reset"));
 
 function updatePictureControls() {
   const slide = deck?.slides[selected];
@@ -599,6 +686,7 @@ function updatePictureControls() {
   pictureHint.hidden = !selectedPicture;
   download.disabled = !deck || exporting || deck.slides.some(item => pendingPictures.has(item));
   renderLibrary();
+  updateLayoutControls();
 }
 
 function finishCurrentTextEdit() {
@@ -606,11 +694,14 @@ function finishCurrentTextEdit() {
 }
 
 function selectPage(index) {
+  finishCurrentTextEdit();
   selected = index;
   selectedPicture = undefined;
   [...pages.children].forEach((button, i) => button.setAttribute("aria-pressed", String(i === index)));
   find("position").textContent = `第 ${index + 1} / ${deck.slides.length} 页`;
   pictureStatus.textContent = "";
+  layoutControls.open = false;
+  layoutStatus.hidden = true;
   renderSlide();
   updatePictureControls();
 }

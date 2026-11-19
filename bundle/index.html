@@ -103,6 +103,16 @@
         </div>
       </div>
       <nav id="pages" class="pages" aria-label="幻灯片页面" hidden></nav>
+      <details id="layout-controls" class="layout-controls" hidden>
+        <summary>更换布局 <span id="layout-page"></span><span id="layout-current"></span></summary>
+        <p class="edit-hint">仅调整当前页，保留文字与图片，不消耗 Anna 额度。</p>
+        <div id="layout-options" class="layout-options" role="group" aria-label="本页可用布局"></div>
+        <div class="layout-actions">
+          <button id="layout-undo" class="text-button" type="button" disabled>撤销上次切换</button>
+          <button id="layout-reset" class="text-button" type="button" disabled>恢复原布局</button>
+        </div>
+        <p id="layout-status" class="status" role="status" aria-live="polite" hidden></p>
+      </details>
       <div id="picture-controls" class="picture-controls" hidden>
         <button id="insert-picture" class="button secondary" type="button">插入图片</button>
         <select id="picture-picker" aria-label="选择本页图片" hidden></select>

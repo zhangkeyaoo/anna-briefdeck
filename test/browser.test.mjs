@@ -6,6 +6,7 @@ import JSZip from "jszip";
 import { chromium } from "playwright-core";
 import { sampleDeck } from "../bundle/deck.js";
 import { archiveMigration, prioritizedPilot, supportPilot } from "./slide-design-fixtures.mjs";
+import { boundaryLayoutDeck } from "./p2-layout-fixtures.mjs";
 
 const origin = "https://briefdeck.test";
 const types = { html: "text/html", js: "text/javascript", css: "text/css", json: "application/json" };
@@ -536,6 +537,224 @@ browserCase("M2.4 applies the same varied templates to the example and simulated
   }
   const [request] = await requests(frame);
   assert.match(request.messages[0].content.text, /metrics 指标/);
+});
+
+browserCase("P2.1–P2.4 switches sample metrics, commits active edits, preserves pictures and reopens saved layouts without Anna", async (page, frame) => {
+  await frame.getByRole("button", { name: "载入示例" }).click();
+  assert.ok(await frame.locator("#layout-controls").isHidden());
+  await frame.getByRole("button", { name: "第 2 页", exact: true }).click();
+  const controls = frame.locator("#layout-controls");
+  await controls.locator("summary").click();
+  assert.match(await controls.locator("summary").innerText(), /第 2 页.*原有布局/);
+  assert.deepEqual(await controls.locator(".layout-choice strong").allTextContents(), ["并列展示", "简洁文字"]);
+  await controls.getByRole("button", { name: "简洁文字", exact: true }).click();
+  assert.equal(await controls.getByRole("button", { name: "简洁文字", exact: true }).getAttribute("aria-pressed"), "true");
+  await frame.locator("#stage").getByRole("button", { name: "编辑要点 1", exact: true }).click();
+  await frame.getByRole("textbox", { name: "要点 1编辑框", exact: true }).fill("仅工作日处理492单，范围限两个业务组。");
+  // Click without Enter or a separate blur: the layout transaction must commit the edit.
+  await controls.getByRole("button", { name: "并列展示", exact: true }).click();
+  assert.match(await frame.locator("#stage").innerText(), /仅工作日处理492单，范围限两个业务组/);
+  await controls.getByRole("button", { name: "撤销上次切换" }).click();
+  assert.equal(await controls.getByRole("button", { name: "简洁文字", exact: true }).getAttribute("aria-pressed"), "true");
+  assert.match(await frame.locator("#stage").innerText(), /492单/);
+  await controls.getByRole("button", { name: "恢复原布局" }).click();
+  assert.match(await controls.locator("summary").innerText(), /原有布局/);
+  const image = await picture(frame, "png", 58);
+  await frame.locator("#picture-file").setInputFiles(image);
+  const figure = frame.locator("#stage").getByRole("group", { name: image.name });
+  await figure.waitFor();
+  await figure.focus();
+  await figure.press("ArrowLeft");
+  const pictureStyle = await figure.getAttribute("style");
+  await controls.getByRole("button", { name: "简洁文字", exact: true }).click();
+  assert.equal(await figure.getAttribute("style"), pictureStyle);
+  await figure.focus();
+  await figure.press("ArrowLeft");
+  const movedStyle = await figure.getAttribute("style");
+  assert.notEqual(movedStyle, pictureStyle);
+  await controls.getByRole("button", { name: "并列展示", exact: true }).click();
+  assert.equal(await figure.getAttribute("style"), movedStyle);
+  await controls.getByRole("button", { name: "简洁文字", exact: true }).click();
+  await frame.locator("#library > summary").click();
+  await frame.getByRole("button", { name: "保存当前 PPT" }).click();
+  await frame.getByText("当前 PPT 已保存", { exact: true }).waitFor();
+  const stored = await frame.evaluate(() => Object.values(JSON.parse(localStorage.getItem("mockAnnaStorage")))[0].value);
+  assert.equal(stored.deck.slides[1].manualLayout, "plain");
+  assert.deepEqual(stored.deck.slides.filter((_, i) => i !== 1), sampleDeck.slides.filter((_, i) => i !== 1));
+  assert.equal((await requests(frame)).length, 0);
+  await page.reload();
+  const reopened = page.frames().find(item => item.parentFrame());
+  await reopened.locator("#library > summary").click();
+  await reopened.getByRole("button", { name: /客服工单分流试点.*6 页/ }).click();
+  await reopened.getByRole("button", { name: "第 2 页", exact: true }).click();
+  await reopened.locator("#layout-controls > summary").click();
+  assert.equal(await reopened.getByRole("button", { name: "简洁文字", exact: true }).getAttribute("aria-pressed"), "true");
+  assert.equal(await reopened.getByRole("group", { name: image.name }).getAttribute("style"), movedStyle);
+  assert.match(await reopened.locator("#stage").innerText(), /仅工作日处理492单，范围限两个业务组/);
+  const downloading = page.waitForEvent("download");
+  await reopened.locator("#download").click();
+  const downloaded = await downloading;
+  const zip = await JSZip.loadAsync(await readFile(await downloaded.path()));
+  const xml = await zip.file("ppt/slides/slide2.xml").async("string");
+  assert.match(xml, /仅工作日处理492单，范围限两个业务组/);
+  assert.match(xml, /<p:pic>/);
+  assert.match(xml, /<p:sp>/);
+  if (process.env.BRIEFDECK_P2_EVIDENCE) await reopened.locator(".editor").screenshot({ path: `${process.env.BRIEFDECK_P2_EVIDENCE}/01-restored-metrics.png` });
+  if (process.env.BRIEFDECK_P2_OUTPUT) await downloaded.saveAs(`${process.env.BRIEFDECK_P2_OUTPUT}/p2-saved-with-picture.pptx`);
+  assert.equal((await requests(reopened)).length, 0);
+  // The standalone preview uses IndexedDB rather than Anna's storage adapter.
+  await page.goto(origin + "/bundle/index.html");
+  await page.getByRole("button", { name: "载入示例" }).click();
+  await page.getByRole("button", { name: "第 2 页", exact: true }).click();
+  await page.locator("#layout-controls > summary").click();
+  await page.getByRole("button", { name: "简洁文字", exact: true }).click();
+  await page.locator("#library > summary").click();
+  await page.getByRole("button", { name: "保存当前 PPT" }).click();
+  await page.getByText("当前 PPT 已保存", { exact: true }).waitFor();
+  await page.reload();
+  await page.locator("#library > summary").click();
+  await page.getByRole("button", { name: /客服工单分流试点.*6 页/ }).click();
+  await page.getByRole("button", { name: "第 2 页", exact: true }).click();
+  assert.match(await page.locator("#layout-current").innerText(), /简洁文字/);
+});
+
+browserCase("P2 local seeded history offers three compatible choices, keeps per-page undo and ignores invalid overrides", async (page, frame) => {
+  const slides = structuredClone(sampleDeck.slides);
+  slides[0].title = "布局切换回归";
+  const real = JSON.parse(realP1Response.content.text);
+  slides[1] = real.slides[1];
+  // Seed normalized history using a synthetic summary; no live generation is required.
+  slides[1].design = slides[1].design.map(([point, kind, x, y, w, h]) => ({ point, kind, x, y, w, h }));
+  slides[2] = { layout: "summary", title: "当前证据支持阶段复盘，扩大范围仍需验证", points: [
+    "首次响应中位数改善，结论仅适用于当前试点范围和统计周期。",
+    "复核覆盖保持100%，未验证减少人工审核工作量的效果。",
+    "下一阶段先补齐样本与稳定性证据，再由负责人决定是否扩大试点。"
+  ] };
+  const record = { id: "p2-seeded", title: "布局切换回归", pageCount: 6, updatedAt: Date.now(), style: { theme: "minimal", accent: "" }, deck: { slides } };
+  await frame.evaluate(record => localStorage.setItem("mockAnnaStorage", JSON.stringify({
+    "briefdeck/drafts/p2-seeded": { value: record, metadata: { schema: 1, title: record.title, pageCount: 6, updatedAt: record.updatedAt }, etag: "initial" }
+  })), record);
+  await page.reload();
+  const active = page.frames().find(item => item.parentFrame());
+  await active.locator("#library > summary").click();
+  await active.getByRole("button", { name: /布局切换回归.*6 页/ }).click();
+  const controls = active.locator("#layout-controls");
+  const canvas = active.locator("#stage");
+  const snapshot = () => active.evaluate(() => Object.values(JSON.parse(localStorage.getItem("mockAnnaStorage")))[0].value.deck.slides);
+  for (const [number, names] of [[2, ["重点指标", "并列展示", "简洁文字"]], [3, ["突出首条", "并列展示", "简洁文字"]]]) {
+    await active.getByRole("button", { name: `第 ${number} 页`, exact: true }).click();
+    await controls.locator("summary").click();
+    assert.deepEqual(await controls.locator(".layout-choice strong").allTextContents(), names);
+    for (const name of names) {
+      await controls.getByRole("button", { name, exact: true }).click();
+      assert.equal(await controls.getByRole("button", { name, exact: true }).getAttribute("aria-pressed"), "true");
+      for (const width of [1200, 480]) {
+        await page.setViewportSize({ width, height: 900 });
+        assert.ok(await canvas.locator(".slide-text").evaluateAll(items => items.filter(item => item.textContent).every(item => {
+          const range = document.createRange(); range.selectNodeContents(item);
+          const text = range.getBoundingClientRect(), box = item.getBoundingClientRect();
+          return text.top >= box.top - 1 && text.bottom <= box.bottom + 1 && text.right <= box.right + 1;
+        })), `${number} ${name} fits at ${width}`);
+      }
+      await page.setViewportSize({ width: 1200, height: 900 });
+      if (process.env.BRIEFDECK_P2_EVIDENCE) await active.locator(".editor").screenshot({ path: `${process.env.BRIEFDECK_P2_EVIDENCE}/${number}-${name}.png` });
+    }
+    await controls.getByRole("button", { name: "撤销上次切换" }).click();
+    assert.equal(await controls.getByRole("button", { name: "并列展示", exact: true }).getAttribute("aria-pressed"), "true");
+    await controls.getByRole("button", { name: "恢复原布局" }).click();
+    await controls.getByRole("button", { name: names[0], exact: true }).click();
+  }
+  await active.getByRole("button", { name: "第 2 页", exact: true }).click();
+  await controls.locator("summary").click();
+  assert.equal(await controls.getByRole("button", { name: "重点指标", exact: true }).getAttribute("aria-pressed"), "true");
+  await controls.getByRole("button", { name: "撤销上次切换" }).click();
+  assert.match(await controls.locator("summary").innerText(), /原有布局/);
+  await controls.getByRole("button", { name: "重点指标", exact: true }).click();
+  await canvas.getByRole("button", { name: "编辑要点 2", exact: true }).click();
+  const rawEditor = canvas.getByRole("textbox", { name: "要点 2编辑框", exact: true });
+  assert.equal(await rawEditor.inputValue(), slides[1].points[1]);
+  await rawEditor.press("Escape");
+  await active.locator("#library > summary").click();
+  await active.getByText("当前 PPT 已保存", { exact: true }).waitFor();
+  const final = await snapshot();
+  assert.deepEqual(final.filter((_, i) => ![1, 2].includes(i)), slides.filter((_, i) => ![1, 2].includes(i)));
+  assert.deepEqual(final.map(slide => slide.points), slides.map(slide => slide.points));
+  const downloading = page.waitForEvent("download");
+  await active.locator("#download").click();
+  const downloaded = await downloading;
+  if (process.env.BRIEFDECK_P2_OUTPUT) await downloaded.saveAs(`${process.env.BRIEFDECK_P2_OUTPUT}/p2-focus-and-summary.pptx`);
+  assert.equal((await requests(active)).length, 0);
+  // Corrupt only the optional user override in persisted history; keep the original design.
+  await active.evaluate(() => {
+    const records = JSON.parse(localStorage.getItem("mockAnnaStorage"));
+    Object.values(records)[0].value.deck.slides[1].manualLayout = "unknown-layout";
+    localStorage.setItem("mockAnnaStorage", JSON.stringify(records));
+  });
+  await page.reload();
+  const restored = page.frames().find(item => item.parentFrame());
+  await restored.locator("#library > summary").click();
+  await restored.getByRole("button", { name: /布局切换回归.*6 页/ }).click();
+  await restored.getByRole("button", { name: "第 2 页", exact: true }).click();
+  assert.equal(await restored.locator("#stage").getByText("18 → 11 分钟", { exact: true }).count(), 1);
+  await restored.getByRole("button", { name: "第 4 页", exact: true }).click();
+  assert.ok(await restored.locator("#layout-controls").isHidden());
+  assert.equal((await requests(restored)).length, 0);
+});
+
+browserCase("P2 failed local switch retains the previous layout and content", async (page) => {
+  await page.route(origin + "/bundle/layout.js", async route => {
+    const body = (await readFile(new URL("../release/bundle/layout.js", import.meta.url), "utf8"))
+      .replace('const candidate = { ...slide, manualLayout: choice };', 'if (globalThis.mockLocalLayoutFailure) throw new Error("本地布局校验失败，已保留原布局。"); const candidate = { ...slide, manualLayout: choice };');
+    await route.fulfill({ contentType: "text/javascript", body });
+  });
+  await page.reload();
+  const frame = page.frames().find(item => item.parentFrame());
+  await frame.getByRole("button", { name: "载入示例" }).click();
+  await frame.getByRole("button", { name: "第 2 页", exact: true }).click();
+  const controls = frame.locator("#layout-controls");
+  await controls.locator("summary").click();
+  await controls.getByRole("button", { name: "简洁文字", exact: true }).click();
+  const before = await frame.locator("#stage .slide-text").evaluateAll(items => items.map(item => [item.textContent, item.getAttribute("style")]));
+  await frame.evaluate(() => { window.mockLocalLayoutFailure = true; });
+  await controls.getByRole("button", { name: "并列展示", exact: true }).click();
+  assert.match(await frame.locator("#layout-status").innerText(), /已保留原布局/);
+  assert.equal(await controls.getByRole("button", { name: "简洁文字", exact: true }).getAttribute("aria-pressed"), "true");
+  assert.deepEqual(await frame.locator("#stage .slide-text").evaluateAll(items => items.map(item => [item.textContent, item.getAttribute("style")])), before);
+  if (process.env.BRIEFDECK_P2_EVIDENCE) await frame.locator(".editor").screenshot({ path: `${process.env.BRIEFDECK_P2_EVIDENCE}/04-switch-rejected.png` });
+  await frame.evaluate(() => { window.mockLocalLayoutFailure = false; });
+  await controls.getByRole("button", { name: "并列展示", exact: true }).click();
+  assert.equal(await controls.getByRole("button", { name: "并列展示", exact: true }).getAttribute("aria-pressed"), "true");
+  assert.equal((await requests(frame)).length, 0);
+});
+
+browserCase("P2 all six 56-character layout variants fit narrow preview and export natively", async (page, frame) => {
+  const deck = boundaryLayoutDeck();
+  assert.equal(deck.slides.length, 7);
+  for (const slide of deck.slides.slice(1)) assert.ok(slide.points.every(point => point.length === 56));
+  await frame.evaluate(deck => localStorage.setItem("mockAnnaStorage", JSON.stringify({
+    "briefdeck/drafts/p2-boundary": { etag: "boundary", metadata: { schema: 1, title: "长文边界", pageCount: 7, updatedAt: Date.now() },
+      value: { id: "p2-boundary", title: "长文边界", pageCount: 7, style: { theme: "minimal" }, deck, updatedAt: Date.now() } }
+  })), deck);
+  await page.reload();
+  const active = page.frames().find(item => item.parentFrame());
+  await active.locator("#library > summary").click();
+  await active.getByRole("button", { name: /长文边界.*7 页/ }).click();
+  for (let number = 2; number <= 7; number++) {
+    await active.getByRole("button", { name: `第 ${number} 页`, exact: true }).click();
+    for (const width of [1200, 480]) {
+      await page.setViewportSize({ width, height: 900 });
+      assert.ok(await active.locator("#stage .slide-text").evaluateAll(items => items.filter(item => item.textContent).every(item => {
+        const range = document.createRange(); range.selectNodeContents(item);
+        const text = range.getBoundingClientRect(), box = item.getBoundingClientRect();
+        return text.left >= box.left - 1 && text.top >= box.top - 1 && text.bottom <= box.bottom + 1 && text.right <= box.right + 1;
+      })), `56-character layout page ${number} fits ${width}`);
+    }
+  }
+  const downloading = page.waitForEvent("download");
+  await active.locator("#download").click();
+  const downloaded = await downloading;
+  if (process.env.BRIEFDECK_P2_OUTPUT) await downloaded.saveAs(`${process.env.BRIEFDECK_P2_OUTPUT}/p2-boundary-layouts.pptx`);
+  assert.equal((await requests(active)).length, 0);
 });
 
 browserCase("P1.2 migration excerpt with simulated lead keeps evidence, editable export and bounds", async (page, frame) => {
