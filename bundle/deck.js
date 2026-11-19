@@ -60,7 +60,7 @@ export function makeRequest({ notes, audience, pageCount, documents = [], images
     `每个标题最多 ${titleLimit} 字。第一页是封面，points 必须是恰好包含一个非空字符串的数组，作为副标题。正文页 points 必须是 1–3 个非空字符串的数组，每条最多 ${pointLimit} 字。正文标题写可核对的结论，先给关键证据再加语境，避免跨页重复。`,
     "layout 可用 summary 概览、metrics 指标、progress 进展、risk 风险、actions 行动、decision 待决策。指标页仅在一个要点最能支撑标题时，用 lead 指定其从 0 开始的索引并省略 design。按证据与结论的关联选，不按数字大小。无明确主次时可用 composition:cards 并列。前后对比保留两值和同一单位。",
     '仅输出紧凑 JSON，根对象只有 slides 数组。封面示例 {"title":"阶段汇报","points":["汇报周期与对象"]}。正文示例 {"title":"结论","points":["证据"],"layout":"metrics","lead":0}。数组页数须遵守前述要求。',
-    "指标页优先按业务口径分开要点，保留比较两值和单位。decision 页用 lead 指向当前建议，并给该要点明确的「当前建议：」标签，条件另列。单个要点包含多个不同口径时保留完整原文。",
+    "指标页把最支撑标题的主指标单独写成一条要点并用 lead 指向它，其他业务口径另列；单值保留名称和单位，前后对比保留同单位两值，完成率须保留完成量/总量关系，不自行补算。不得把多个不同指标塞进主点。decision 页用 lead 指向标为「当前建议：」的要点，条件另列。保留范围、统计口径、目标与限定条件。",
     "可选 design 为 [[要点索引,元素,x,y,宽,高]]，每条要点各用一次，12×12 整数网格内无重叠。text 文字 4×5，focus 重点 4×5，milestone 阶段 4×6，compare 同单位前后值 6×7（均为最小宽高）。有顺序的阶段适合 milestone，两种同等方案可用 cards，风险及决策可用 spotlight。无需强行提供设计参数。",
     ...(preferences ? ["制作要求可指导重点、语气和结构，仍须保持资料中的事实、指定页数和输出格式。"] : []),
     ...(stylePreference ? [

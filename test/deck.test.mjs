@@ -7,8 +7,50 @@ import { createPresentation, fileName } from "../bundle/export.js";
 import { dimensions, movePicture, placePicture, resizePicture, slideLayout, themePalette } from "../bundle/layout.js";
 import { archiveMigration, prioritizedPilot, supportPilot } from "./slide-design-fixtures.mjs";
 import { readFileSync } from "node:fs";
+import { restoreDraft, snapshotDraft } from "../bundle/library.js";
 
 const realP1Response = JSON.parse(readFileSync(new URL("./fixtures/p1-real-response.json", import.meta.url)));
+const migrationExcerpt = JSON.parse(readFileSync(new URL("./fixtures/p12-migration-excerpt.json", import.meta.url)));
+
+test("P1.2 explicit metric grammar preserves migration scope and falls back on ambiguous comparisons", async () => {
+  const variants = [
+    { layout: "metrics", lead: 0 },
+    { layout: "metrics", design: [{ point: 0, kind: "focus" }, { point: 1, kind: "text" }] }
+  ];
+  for (const variant of variants) {
+    const slide = { title: migrationExcerpt.title, points: migrationExcerpt.points, ...variant };
+    const elements = slideLayout(slide, 1, 6).elements;
+    assert.ok(elements.some(item => item.value === "8 → 2 分钟" && item.size >= 29));
+    assert.ok(elements.some(item => item.value === "缩短约 75%"));
+    assert.match(elements.find(item => item.field === 0).value, /计划迁移12,000份，已完成9,600份，完成率80%/);
+    assert.equal(elements.find(item => item.field === 1).value, migrationExcerpt.points[1]);
+    assert.deepEqual(slide.points, migrationExcerpt.points);
+  }
+  const render = point => slideLayout({ layout: "metrics", lead: 0, title: "指标", points: [point] }, 1, 4).elements;
+  assert.ok(render("完成率80%。").some(item => item.value === "80%" && item.size === 39));
+  assert.ok(render("平均检索时间由8分钟缩短到2分钟。").some(item => item.value === "8 → 2 分钟"));
+  for (const point of ["检索由8分钟缩短至2分钟；审核由6分钟缩短至3分钟。", "计划12,000份，已完成9,600份，完成率80%。", "由8分钟缩短至2小时。", "8 → 2 分钟，6 → 3 分钟。"]) {
+    const elements = render(point);
+    assert.ok(elements.some(item => item.field === 0 && item.value === point));
+    assert.ok(!elements.some(item => item.size === 39 && item.value));
+  }
+  for (const point of ["由0分钟缩短至2分钟。", "由2分钟缩短至8分钟。"]) {
+    assert.ok(!render(point).some(item => item.value?.includes("约")));
+  }
+  const deck = structuredClone(sampleDeck);
+  deck.slides[1] = { title: migrationExcerpt.title, points: migrationExcerpt.points, layout: "metrics", lead: 0 };
+  const saved = snapshotDraft("migration-mock", deck, { theme: "minimal" });
+  assert.deepEqual(await restoreDraft(saved), deck);
+  const unknown = slideLayout({ title: migrationExcerpt.title, points: migrationExcerpt.points, layout: "metrics" }, 1, 6);
+  assert.ok(!unknown.elements.some(item => item.value === "8 → 2 分钟" && item.size === 39));
+  const zip = await JSZip.loadAsync(await createPresentation(deck, PptxGenJS).write({ outputType: "nodebuffer" }));
+  const xml = await zip.file("ppt/slides/slide2.xml").async("string");
+  for (const value of ["8 → 2 分钟", "缩短约 75%", "12,000份", "9,600份", "80%", "99.2%", "99.5%", "36名员工"]) assert.ok(xml.includes(value));
+  assert.doesNotMatch(xml, /<p:pic>/);
+  const prompt = makeRequest({ notes: "", audience: "", pageCount: 6 });
+  assert.match(prompt.messages[0].content.text, /主指标单独写成一条要点/);
+  assert.equal(prompt.maxTokens, 1800);
+});
 
 const response = (text, stopReason = "endTurn") => ({ content: { text }, stopReason });
 

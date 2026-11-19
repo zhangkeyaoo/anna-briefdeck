@@ -63,8 +63,14 @@ const sectionLabels = {
   decision: "待决策事项"
 };
 
+function metricComparisons(point) {
+  // Recognize an explicit same-unit relationship, never infer the business metric.
+  return [...point.matchAll(/(?<![\d.,+-])([+-]?\d+(?:,\d{3})*(?:\.\d+)?)\s*(分钟|小时|秒|%|单|件|份|条|人|天)\s*(?:缩短至|缩短到|降至|降到|增至|增到|升至|升到|到)\s*([+-]?\d+(?:,\d{3})*(?:\.\d+)?)\s*\2/g)];
+}
+
 function metricComparison(point) {
-  return point.match(/(?<![\d.,+-])([+-]?\d+(?:,\d{3})*(?:\.\d+)?)\s*(分钟|小时|秒|%|单|件|条|人|天)\s*(?:降至|降到|增至|增到|升至|升到|到)\s*([+-]?\d+(?:,\d{3})*(?:\.\d+)?)\s*\2/);
+  const matches = metricComparisons(point);
+  return matches.length === 1 ? matches[0] : undefined;
 }
 
 function metricValue(point) {
@@ -74,9 +80,12 @@ function metricValue(point) {
 }
 
 function evidenceComparison(point) {
-  const match = metricComparison(point);
+  const matches = metricComparisons(point);
+  const arrows = [...point.matchAll(/(?<![\d.,+\-−])([+-]?\d+(?:,\d{3})*(?:\.\d+)?)\s*(分钟|小时|秒|%|％|单|件|份|条|人|天)?\s*→\s*([+-]?\d+(?:,\d{3})*(?:\.\d+)?)\s*(分钟|小时|秒|%|％|单|件|份|条|人|天)/g)];
+  if (matches.length + arrows.length !== 1) return undefined;
+  const match = matches[0];
   if (match) return { phrase: match[0], index: match.index, before: match[1], unit: match[2], after: match[3] };
-  const arrow = point.match(/(?<![\d.,+\-−])([+-]?\d+(?:,\d{3})*(?:\.\d+)?)\s*(分钟|小时|秒|%|％|单|件|条|人|天)?\s*→\s*([+-]?\d+(?:,\d{3})*(?:\.\d+)?)\s*(分钟|小时|秒|%|％|单|件|条|人|天)/);
+  const arrow = arrows[0];
   if (!arrow || (arrow[2] && arrow[2] !== arrow[4])) return undefined;
   return { phrase: arrow[0], index: arrow.index, before: arrow[1], unit: arrow[4], after: arrow[3] };
 }
@@ -84,7 +93,7 @@ function evidenceComparison(point) {
 function evidenceValue(value) {
   const comparison = evidenceComparison(value);
   if (comparison) return `${comparison.before} → ${comparison.after} ${comparison.unit}`;
-  const matches = value.match(/[+-]?\d+(?:,\d{3})*(?:\.\d+)?\s*(?:[%％]|分钟|小时|秒|单|件|条|人|天|倍|万元|元)/g);
+  const matches = value.match(/[+-]?\d+(?:,\d{3})*(?:\.\d+)?\s*(?:[%％]|分钟|小时|秒|单|件|份|条|人|天|倍|万元|元)/g);
   return matches?.length === 1 ? matches[0] : "";
 }
 
@@ -119,7 +128,7 @@ function evidenceChange(point) {
   const before = Number(comparison.before.replaceAll(",", ""));
   const after = Number(comparison.after.replaceAll(",", ""));
   if (before <= 0 || after < 0 || before === after) return "";
-  if ((/降/.test(comparison.phrase) && after > before) || (/升|增/.test(comparison.phrase) && after < before)) return "";
+  if ((/降|缩短/.test(comparison.phrase) && after > before) || (/升|增/.test(comparison.phrase) && after < before)) return "";
   const percentage = Math.round(Math.abs((after - before) / before) * 100);
   if (percentage < 1 || percentage > 9999) return "";
   const direction = after > before ? "上升" : /^(分钟|小时|秒)$/.test(comparison.unit) ? "缩短" : "下降";

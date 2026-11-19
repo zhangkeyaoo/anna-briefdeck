@@ -13,6 +13,7 @@ const chrome = "C:/Program Files/Google/Chrome/Application/chrome.exe";
 let browser;
 let wordBuffer;
 const realP1Response = JSON.parse(await readFile(new URL("./fixtures/p1-real-response.json", import.meta.url), "utf8"));
+const migrationExcerpt = JSON.parse(await readFile(new URL("./fixtures/p12-migration-excerpt.json", import.meta.url), "utf8"));
 
 before(async () => {
   const executablePath = process.env.BRIEFDECK_CHROMIUM || (existsSync(chrome) ? chrome : undefined);
@@ -83,6 +84,12 @@ async function serve(route) {
           };
           if (window.mockOutcome === "json") return { ...response, content: { text: "broken" } };
           if (window.mockOutcome === "real-p1") return ${JSON.stringify(realP1Response)};
+          if (window.mockOutcome === "migration-excerpt") {
+            const result = structuredClone(slides);
+            const excerpt = ${JSON.stringify(migrationExcerpt)};
+            result[1] = { title: excerpt.title, points: excerpt.points, layout: "metrics", lead: 0 };
+            return { stopReason: "endTurn", content: { text: JSON.stringify({ slides: result }) }, _meta: { quotaConsumed: 0 } };
+          }
           if (window.mockOutcome === "cover-shape") {
             const response = ${JSON.stringify(realP1Response)};
             const parsed = JSON.parse(response.content.text);
@@ -529,6 +536,35 @@ browserCase("M2.4 applies the same varied templates to the example and simulated
   }
   const [request] = await requests(frame);
   assert.match(request.messages[0].content.text, /metrics 指标/);
+});
+
+browserCase("P1.2 migration excerpt with simulated lead keeps evidence, editable export and bounds", async (page, frame) => {
+  await frame.locator("#notes").fill("模拟主证据参数，内容取自迁移真实页面");
+  await frame.evaluate(() => { window.mockOutcome = "migration-excerpt"; });
+  await submit(frame);
+  await status(frame).filter({ hasText: /已生成 6 页/ }).waitFor();
+  await frame.getByRole("button", { name: "第 2 页", exact: true }).click();
+  const canvas = frame.locator("#stage");
+  assert.equal(await canvas.getByText("8 → 2 分钟", { exact: true }).count(), 1);
+  assert.match(await canvas.innerText(), /缩短约 75%[\s\S]*12,000份[\s\S]*9,600份[\s\S]*80%[\s\S]*99.2%[\s\S]*99.5%[\s\S]*36名员工/);
+  for (const width of [1200, 480]) {
+    await page.setViewportSize({ width, height: 900 });
+    assert.ok(await canvas.locator(".slide-text").evaluateAll(items => items.filter(item => item.textContent).every(item => {
+      const range = document.createRange(); range.selectNodeContents(item);
+      const content = range.getBoundingClientRect(), box = item.getBoundingClientRect();
+      return content.top >= box.top - 1 && content.bottom <= box.bottom + 1 && content.right <= box.right + 1;
+    })));
+  }
+  await page.setViewportSize({ width: 1200, height: 900 });
+  if (process.env.BRIEFDECK_P12_EVIDENCE) await canvas.screenshot({ path: `${process.env.BRIEFDECK_P12_EVIDENCE}/02-migration-browser.png` });
+  const downloading = page.waitForEvent("download");
+  await frame.locator("#download").click();
+  const downloaded = await downloading;
+  if (process.env.BRIEFDECK_P12_OUTPUT) await downloaded.saveAs(process.env.BRIEFDECK_P12_OUTPUT);
+  await editSlideText(frame, "要点 1", migrationExcerpt.points[0].replace("至2分钟", "至4分钟"));
+  assert.equal(await canvas.getByText("8 → 4 分钟", { exact: true }).count(), 1);
+  assert.match(await canvas.innerText(), /缩短约 50%/);
+  assert.equal((await requests(frame)).length, 1);
 });
 
 browserCase("P1.1 replays real metrics and recommendation, and downloads failed-cover diagnostics", async (page, frame) => {

@@ -77,3 +77,16 @@ M5–M8 的计划用例见[下一轮规格](NEXT-SPECS.md)。本页保留各轮�
 | P1R.2 决策层级 | 当前建议独立于条件，字号和面积更大。编辑器保留原句，历史稿可以识别唯一的明确建议标签。 | ① 原稿不通过，两块近似等权重。<br><img src="evidence/p11/00-original-decision.png" width="280" alt="原稿的条件与建议两个卡片"><br>② 本地回放通过，建议突出，95%且连续一周的条件保留。<br><img src="evidence/p11/02-real-decision-repaired.png" width="280" alt="建议突出后的决策页"> |
 | P1R.3 契约与诊断 | 封面一个字符串数组，正文 1–3 个字符串，空、缺失、多条或错误类型仍拒绝。提示词含因果约束。失败可查看及下载完整输出、错误和用量。 | 本地通过。人工构造的封面错误能复现；下载 JSON 与模拟失败响应一致，旧稿和修改仍在，无自动重试。旧成功响应中的未经证实因果句保持原文，供追溯。<br><img src="evidence/p11/03-cover-diagnostic.png" width="280" alt="校验失败后查看原始模型输出与错误"> |
 | P1R.4 导出与兼容 | 原生文本、形状可编辑，两种窗口宽度内无溢出，原对比与时间线、图片、保存和删除回归通过。 | 浏览器通过。PowerPoint 首测两处文字宽度超出约15–20 pt，记为不通过。<br><img src="evidence/p11/04a-native-metrics-overflow.png" width="280" alt="主证据说明超出文本框的首次桌面检查"><br><img src="evidence/p11/05a-native-decision-overflow.png" width="280" alt="建议正文超出文本框的首次桌面检查"><br>说明字号17→16 pt、建议23→22 pt后复测六页共37个原生文本框通过，主指标直接编辑成功。<br><img src="evidence/p11/04-native-metrics.png" width="280" alt="字号修正后的 PowerPoint 指标页"><br><img src="evidence/p11/05-native-decision.png" width="280" alt="字号修正后的 PowerPoint 决策页"> |
+
+## P1.2 指标可视化泛化
+
+来源：客服使用完整真实响应；迁移使用用户确认、且与 E 盘原生 PPTX 核对一致的第二页内容，见 test/fixtures/p12-migration-excerpt.json。迁移原始 JSON 未保存，lead/design 未知；所有新增参数均为模拟。不得将本次回归说成两份完整真实 JSON 回放。
+
+| 规格 | 用例与预期 | 验证记录 |
+| --- | --- | --- |
+| P1G.1 | 单值80%、明确8→2及缩短到句式、客服18→11；零基线和方向矛盾不计算；多组比较不猜重点。 | 单元通过，客服仍为约39%，迁移为约75%。没有主证据时沿用已有布局。 |
+| P1G.2 | 迁移在模拟lead与唯一focus下突出比较，其余量、目标及口径保留。 | ① 0.1.7真实导出视觉不通过，只有复合大段文字。<br><img src="evidence/p12/01-original-migration.png" width="360" alt="原真实迁移PPTX只有粗体长文"><br>② 修复后模拟参数回归通过，保留12,000/9,600、80%、99.2%/99.5%、0.3个百分点及36人。<br><img src="evidence/p12/02-migration-browser.png" width="360" alt="真实内容摘录加模拟lead显示前后大数字"> |
+| P1G.3 | Prompt主指标单独成点，完成量/总量及限定不丢失，单次请求上限1800。 | 请求契约通过；本轮未调用Anna，实际模型对新提示的遵循未验证。 |
+| P1G.4 | 快照恢复、编辑、窄屏、原生导出、历史和无效参数回退。 | 15项单元、20组浏览器及Anna严格包校验通过。1200/480px无文字越界，编辑到8→4同步50%，保存和删除等既有用例通过。PowerPoint实际打开六页37个文本框，无宽高溢出，主数字原生文本可独立修改。<br><img src="evidence/p12/03-native-migration.png" width="360" alt="PowerPoint原生对象显示迁移比较及保留的完成量"> |
+
+限制：本轮不新增通用结构化指标协议；完成/总量仍以文字保留，没有自动环形图或进度条。不能确认原迁移响应是否选了lead/focus。历史数据机制已保留这些字段，但尚未读取用户账户的实际记录。回归导出为 release/p12-migration-simulated.pptx，除第二页外沿用示例页，不能视为完整真实迁移稿。
