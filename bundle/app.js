@@ -35,7 +35,9 @@ const replaceDialog = find("replace-dialog");
 const library = find("library");
 const draftList = find("draft-list");
 const newDraft = find("new-draft");
-const saveExample = find("save-example");
+const saveDraftButton = find("save-draft");
+const draftSaveState = find("draft-save-state");
+const deleteDialog = find("delete-dialog");
 const libraryStatus = find("library-status");
 const emptyStage = stage.firstElementChild;
 const params = new URLSearchParams(location.search);
@@ -56,6 +58,7 @@ const pendingSaves = new Map();
 const draftStorage = hosted ? annaLibrary(getRuntime) : browserLibrary;
 const draftTime = new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 let activeDraft;
+let deletingDraft;
 let openingDraft = false;
 let loadingLibrary = true;
 let libraryReadFailed = false;
@@ -70,11 +73,20 @@ function updateSlideStyle() {
   if (deck) renderSlide();
 }
 
-function renderLibrary() {
-  const disabled = busy || exporting || openingDraft || loadingLibrary || Boolean(deck?.slides.some(slide => pendingPictures.has(slide)));
+function updateLibraryActions() {
+  const disabled = busy || exporting || openingDraft || Boolean(deletingDraft) || loadingLibrary ||
+    Boolean(deck?.slides.some(slide => pendingPictures.has(slide)));
+  const saving = pendingSaves.has(activeDraft);
   newDraft.disabled = disabled;
-  saveExample.hidden = !deck || Boolean(activeDraft);
-  saveExample.disabled = disabled;
+  saveDraftButton.disabled = disabled || !deck || saving;
+  draftSaveState.hidden = !deck;
+  draftSaveState.textContent = saving ? "正在保存…" : failedDrafts.has(activeDraft) ? "保存失败，可重试" :
+    activeDraft ? "当前 PPT 已保存" : "当前 PPT 尚未保存";
+  return disabled;
+}
+
+function renderLibrary() {
+  const disabled = updateLibraryActions();
   find("library-empty").hidden = loadingLibrary || Boolean(drafts.size);
   const records = [...drafts.values()].sort((a, b) => b.updatedAt - a.updatedAt);
   draftList.replaceChildren(...records.map(record => {
@@ -92,7 +104,14 @@ function renderLibrary() {
     meta.textContent = `${record.pageCount} 页 · ${draftTime.format(record.updatedAt)}${record.id === activeDraft ? " · 当前" : ""}`;
     button.append(title, meta);
     button.addEventListener("click", () => openDraft(record.id));
-    row.append(button);
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "text-button draft-delete";
+    remove.disabled = disabled;
+    remove.textContent = "删除";
+    remove.setAttribute("aria-label", `删除 ${title.textContent}`);
+    remove.addEventListener("click", () => deleteDraft(record));
+    row.append(button, remove);
     return row;
   }));
 }
@@ -103,14 +122,14 @@ function showLibraryError(message) {
 }
 
 function saveCurrentDraft() {
-  if (!activeDraft || !deck) return;
+  if (!activeDraft || !deck || activeDraft === deletingDraft) return;
   const record = snapshotDraft(activeDraft, deck, slideStyle());
   drafts.set(record.id, record);
-  renderLibrary();
   const queued = (pendingSaves.get(record.id) ?? Promise.resolve()).catch(() => {}).then(() => {
     if (drafts.get(record.id) === record) return draftStorage.save(record);
   });
   pendingSaves.set(record.id, queued);
+  renderLibrary();
   void queued.then(() => {
     if (drafts.get(record.id) !== record) return;
     failedDrafts.delete(record.id);
@@ -121,7 +140,39 @@ function saveCurrentDraft() {
     showLibraryError("有稿件未能保存。当前窗口仍可使用，请下载 PPTX 后再关闭。");
   }).finally(() => {
     if (pendingSaves.get(record.id) === queued) pendingSaves.delete(record.id);
+    updateLibraryActions();
   });
+}
+
+async function deleteDraft(record) {
+  const current = record.id === activeDraft;
+  find("delete-message").textContent = `删除「${record.title || "未命名 PPT"}」？此操作无法撤销。${current ? "当前画布也会关闭。" : ""}`;
+  deleteDialog.returnValue = "cancel";
+  const confirmed = new Promise(resolve => {
+    deleteDialog.addEventListener("close", () => resolve(deleteDialog.returnValue === "delete"), { once: true });
+  });
+  deleteDialog.showModal();
+  if (!await confirmed) return;
+  finishCurrentTextEdit();
+  deletingDraft = record.id;
+  renderLibrary();
+  try {
+    await pendingSaves.get(record.id)?.catch(() => {});
+    await draftStorage.remove(record.id);
+    drafts.delete(record.id);
+    failedDrafts.delete(record.id);
+    if (!libraryReadFailed && !failedDrafts.size) showLibraryError("");
+    if (current) {
+      clearCanvas();
+      setStatus("");
+    }
+  } catch {
+    showLibraryError("未能删除这份 PPT。稿件仍保留，可以稍后重试。");
+  } finally {
+    deletingDraft = undefined;
+    renderLibrary();
+    newDraft.focus();
+  }
 }
 
 function clearBrief(count = defaultPages, style = { theme: "minimal", accent: "" }) {
@@ -139,6 +190,20 @@ function clearBrief(count = defaultPages, style = { theme: "minimal", accent: ""
 function closeLibrary() {
   library.open = false;
   library.querySelector("summary").focus();
+}
+
+function clearCanvas() {
+  deck = undefined;
+  activeDraft = undefined;
+  selectedPicture = undefined;
+  stage.dataset.empty = "true";
+  stage.replaceChildren(emptyStage);
+  pages.hidden = true;
+  pages.replaceChildren();
+  editHint.hidden = true;
+  find("position").textContent = "";
+  pictureStatus.textContent = "";
+  updatePictureControls();
 }
 
 async function openDraft(id) {
@@ -563,30 +628,20 @@ library.addEventListener("keydown", event => {
   if (event.key === "Escape" && library.open) closeLibrary();
 });
 document.addEventListener("pointerdown", event => {
-  if (library.open && !library.contains(event.target)) library.open = false;
+  if (library.open && !deleteDialog.open && !library.contains(event.target)) library.open = false;
 });
 newDraft.addEventListener("click", async () => {
   if (!activeDraft && (deck || notes.value.trim() || sources.length || audience.value || instructions.value) &&
       !await confirmReplace("新建空白将清除当前未保存的画布和资料。")) return;
   finishCurrentTextEdit();
-  deck = undefined;
-  activeDraft = undefined;
-  selectedPicture = undefined;
   clearBrief();
-  stage.dataset.empty = "true";
-  stage.replaceChildren(emptyStage);
-  pages.hidden = true;
-  pages.replaceChildren();
-  editHint.hidden = true;
-  find("position").textContent = "";
-  pictureStatus.textContent = "";
-  updatePictureControls();
+  clearCanvas();
   setStatus("");
   closeLibrary();
 });
-saveExample.addEventListener("click", () => {
+saveDraftButton.addEventListener("click", () => {
   finishCurrentTextEdit();
-  activeDraft = crypto.randomUUID();
+  activeDraft ??= crypto.randomUUID();
   saveCurrentDraft();
 });
 find("library-location").textContent = hosted ? "稿件保存在你的 Anna 账号内。" : "稿件保存在此浏览器中。";
@@ -648,7 +703,7 @@ fileInput.addEventListener("change", () => {
   fileInput.value = "";
 });
 example.addEventListener("click", async () => {
-  if (busy || openingDraft || replaceDialog.open || deck?.slides.some(slide => pendingPictures.has(slide))) return;
+  if (busy || openingDraft || deletingDraft || deleteDialog.open || replaceDialog.open || deck?.slides.some(slide => pendingPictures.has(slide))) return;
   if ((notes.value.trim() && notes.value !== sampleNotes || sources.length || deck) &&
       !await confirmReplace(activeDraft ? "载入示例会清除当前输入资料，已保存的 PPT 可以从「我的 PPT」打开。" : "载入示例会替换当前资料和幻灯片。")) return;
   finishCurrentTextEdit();
@@ -664,7 +719,7 @@ example.addEventListener("click", async () => {
 
 form.addEventListener("submit", async event => {
   event.preventDefault();
-  if (busy || openingDraft || replaceDialog.open) return;
+  if (busy || openingDraft || deletingDraft || deleteDialog.open || replaceDialog.open) return;
   if (deck?.slides.some(slide => pendingPictures.has(slide))) {
     setStatus("图片仍在读取，请稍后生成。", "error");
     return;
@@ -697,7 +752,7 @@ form.addEventListener("submit", async event => {
     setStatus("请在 Anna 中打开应用以使用 AI 生成。当前可试用示例。", "error");
     return;
   }
-  if (deck && !activeDraft && !await confirmReplace("生成会打开新稿。要保留当前示例，可先在「我的 PPT」中保存。")) return;
+  if (deck && !activeDraft && !await confirmReplace("生成会打开新稿。要保留当前 PPT，可先在「我的 PPT」中保存。")) return;
   finishCurrentTextEdit();
   const images = sources.filter(source => source.image).map(source => source.image);
   const documents = sources.filter(source => source.text).map(source => ({ name: source.file.name, text: source.text }));

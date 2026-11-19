@@ -49,6 +49,14 @@ async function serve(route) {
           records[key] = { value, metadata, etag };
           localStorage.setItem("mockAnnaStorage", JSON.stringify(records));
           return { etag };
+        },
+        async delete({ key, if_match }) {
+          if (window.mockDeleteFailure) throw Error("unavailable");
+          const records = readStorage();
+          if (!records[key]) throw { code: "not_found" };
+          if (if_match && records[key].etag !== if_match) throw Error("precondition_failed");
+          delete records[key];
+          localStorage.setItem("mockAnnaStorage", JSON.stringify(records));
         }
       };
       window.requests = [];
@@ -729,6 +737,14 @@ browserCase("M6.1 restores independent generated drafts, including pictures, aft
   await frame.locator("#page-count").fill("4");
   await submit(frame);
   await status(frame).filter({ hasText: /已生成 4 页/ }).waitFor();
+  await menu.click();
+  await frame.getByText("当前 PPT 已保存", { exact: true }).waitFor();
+  const summary = await menu.boundingBox();
+  const arrow = await frame.locator(".library-chevron").boundingBox();
+  assert.ok(Math.abs(summary.y + summary.height / 2 - arrow.y - arrow.height / 2) <= 3);
+  await frame.getByRole("button", { name: "保存当前 PPT" }).click();
+  assert.equal(await list.locator("li").count(), 1);
+  await menu.click();
   await editSlideText(frame, "标题", "四页方案甲");
   await frame.locator("#ppt-theme").selectOption("technology");
   await frame.locator("#ppt-color").fill("#a438a6");
@@ -761,7 +777,7 @@ browserCase("M6.1 restores independent generated drafts, including pictures, aft
   assert.equal(await canvas.getByRole("img").count(), 0);
   await menu.click();
   if (process.env.BRIEFDECK_M6_EVIDENCE) {
-    await page.screenshot({ path: `${process.env.BRIEFDECK_M6_EVIDENCE}/01-saved-drafts.png`, fullPage: true });
+    await page.screenshot({ path: `${process.env.BRIEFDECK_M6_EVIDENCE}/02-save-current-ppt.png`, fullPage: true });
   }
   await frame.getByRole("button", { name: "新建空白" }).click();
   assert.ok(await frame.locator("#download").isDisabled());
@@ -794,7 +810,7 @@ browserCase("M6.2 leaves sample saving explicit and retains in-memory drafts whe
   await frame.getByText("还没有保存的 PPT。").waitFor();
   assert.equal(await list.getByRole("button").count(), 0);
   await frame.evaluate(() => { window.mockStorageFull = true; });
-  await frame.getByRole("button", { name: "保存示例" }).click();
+  await frame.getByRole("button", { name: "保存当前 PPT" }).click();
   await frame.locator("#library-status").filter({ hasText: /未能保存/ }).waitFor();
   await frame.getByRole("button", { name: "新建空白" }).click();
   await menu.click();
@@ -807,7 +823,7 @@ browserCase("M6.2 leaves sample saving explicit and retains in-memory drafts whe
   await page.goto(origin + "/bundle/index.html");
   await page.getByRole("button", { name: "载入示例" }).click();
   await page.locator("#library > summary").click();
-  await page.getByRole("button", { name: "保存示例" }).click();
+  await page.getByRole("button", { name: "保存当前 PPT" }).click();
   await page.waitForFunction(() => new Promise(resolve => {
     const open = indexedDB.open("briefdeck-library");
     open.onsuccess = () => {
@@ -823,6 +839,48 @@ browserCase("M6.2 leaves sample saving explicit and retains in-memory drafts whe
   await page.locator("#library > summary").click();
   await page.getByRole("button", { name: /客服工单分流试点.*6 页/ }).click();
   assert.match(await page.locator("#stage").innerText(), /客服工单分流试点/);
+  await page.locator("#library > summary").click();
+  await page.getByRole("button", { name: "删除 客服工单分流试点", exact: true }).click();
+  await page.getByRole("dialog", { name: "删除 PPT" }).getByRole("button", { name: "删除", exact: true }).click();
+  await page.getByText("还没有保存的 PPT。").waitFor();
+  assert.ok(await page.locator("#download").isDisabled());
+});
+
+browserCase("M6.3 deletes only the confirmed draft and retains it if storage rejects the deletion", async (page, frame) => {
+  const menu = frame.locator("#library > summary");
+  const list = frame.getByRole("list", { name: "保存的 PPT" });
+  const confirmation = frame.getByRole("dialog", { name: "删除 PPT" });
+  await frame.locator("#notes").fill("生成后保留两份稿件");
+  await submit(frame);
+  await status(frame).filter({ hasText: /已生成 6 页/ }).waitFor();
+  await editSlideText(frame, "标题", "保留的稿件");
+  await submit(frame);
+  await status(frame).filter({ hasText: /已生成 6 页/ }).waitFor();
+  await editSlideText(frame, "标题", "待删除的稿件");
+  await menu.click();
+  await frame.getByText("当前 PPT 已保存", { exact: true }).waitFor();
+  const remove = list.getByRole("button", { name: "删除 待删除的稿件" });
+  await remove.click();
+  await confirmation.getByRole("button", { name: "取消" }).click();
+  assert.equal(await list.locator("li").count(), 2);
+  await frame.evaluate(() => { window.mockDeleteFailure = true; });
+  await remove.click();
+  await confirmation.getByRole("button", { name: "删除", exact: true }).click();
+  await frame.getByText("未能删除这份 PPT。稿件仍保留，可以稍后重试。").waitFor();
+  assert.equal(await list.locator("li").count(), 2);
+  assert.match(await frame.locator("#stage").innerText(), /待删除的稿件/);
+  await frame.evaluate(() => { window.mockDeleteFailure = false; });
+  await remove.click();
+  await confirmation.getByRole("button", { name: "删除", exact: true }).click();
+  await remove.waitFor({ state: "detached" });
+  assert.ok(await frame.locator("#download").isDisabled());
+  assert.equal((await requests(frame)).length, 2);
+  await page.reload();
+  const restored = page.frames().find(item => item.parentFrame());
+  await restored.locator("#library > summary").click();
+  await restored.getByRole("button", { name: /保留的稿件.*6 页/ }).waitFor();
+  assert.equal(await restored.getByRole("button", { name: /待删除的稿件/ }).count(), 0);
+  assert.equal((await requests(restored)).length, 0);
 });
 
 browserCase("M3.1, M4.1 and M4.2 keep preview, paging and actual downloads consistent", async (page, frame) => {

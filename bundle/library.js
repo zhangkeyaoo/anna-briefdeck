@@ -32,7 +32,8 @@ async function transact(mode, operation) {
 
 export const browserLibrary = {
   list: () => transact("readonly", store => store.getAll()),
-  save: record => transact("readwrite", store => store.put(record))
+  save: record => transact("readwrite", store => store.put(record)),
+  remove: id => transact("readwrite", store => store.delete(id))
 };
 
 export function annaLibrary(getRuntime) {
@@ -72,6 +73,16 @@ export function annaLibrary(getRuntime) {
         ...(version ? { if_match: version } : {})
       });
       versions.set(record.id, result.etag);
+    },
+    async remove(id) {
+      const { storage } = await getRuntime();
+      const version = versions.get(id);
+      try {
+        await storage.delete({ key: prefix + id, ...(version ? { if_match: version } : {}) });
+      } catch (error) {
+        if (![error?.code, error?.data?.code, error?.data?.errorCode].includes("not_found")) throw error;
+      }
+      versions.delete(id);
     }
   };
 }

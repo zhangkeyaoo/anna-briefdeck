@@ -7,9 +7,9 @@ BriefDeck 使用静态 UI 包。根目录的 `app.json` 提供展示信息，`ma
 1. **激活开发者并授权 CLI。** 在 staging 注册和验证邮箱，进入开发者控制台。运行 `anna-app login --host https://staging.anna.partners` 并在浏览器批准授权。使用 staging 账号完成后续命令。 [Anna 官方开发教程](https://forum.anna.partners/t/build-on-anna-101/228)
 2. **构建和校验。** 运行 `npm run build`，再用 `anna-app validate --bundle release/bundle --strict` 检查 manifest 与 UI 文件。
 3. **上传工作草稿。** 运行 `anna-app apps push --bundle-dir release/bundle --account https://staging.anna.partners`。CLI 读取项目配置并上传静态资源。日志显示 `working bundle staged` 和 `ready` 后，平台已收到开发草稿。该状态可以继续修改。 [UI 包流程](https://staging.anna.partners/developers/apps/app-ui-bundle.md)
-4. **创建测试版本并安装。** 运行 `anna-app apps cut 0.1.4 --account https://staging.anna.partners` 把工作草稿固定成版本，用 `anna-app apps versions briefdeck --account https://staging.anna.partners` 核对。在开发者页安装测试版本，到「已安装应用」打开。普通商店下载优先查找公开版本，草稿阶段使用开发者入口。 [Anna 官方安装教程](https://forum.anna.partners/t/build-on-anna-101/228)
+4. **创建测试版本并安装。** 运行 `anna-app apps cut 0.1.5 --account https://staging.anna.partners` 把工作草稿固定成版本，用 `anna-app apps versions briefdeck --account https://staging.anna.partners` 核对。在开发者页安装测试版本，到「已安装应用」打开。普通商店下载优先查找公开版本，草稿阶段使用开发者入口。 [Anna 官方安装教程](https://forum.anna.partners/t/build-on-anna-101/228)
 
-已确认的 staging App 名称为 **汇报成稿 BriefDeck**，完整 slug 为 **`@keyzhang/briefdeck`**。最新开发者测试版为 `0.1.4`，由草稿 rev 6 建立，版本 ID 为 685。首轮真实调用在 `0.1.1` 出现截断，`0.1.3` 已真实生成并导出。新版增加了逐页设计和「我的 PPT」。
+已确认的 staging App 名称为 **汇报成稿 BriefDeck**，完整 slug 为 **`@keyzhang/briefdeck`**。最新开发者测试版为 `0.1.5`，由草稿 rev 7 建立，版本 ID 为 686。首轮真实调用在 `0.1.1` 出现截断，`0.1.3` 已真实生成并导出。`0.1.4` 加入逐页设计和「我的 PPT」，`0.1.5` 加入稿件删除并统一保存入口。
 
 ## 真实验证与公开发布
 

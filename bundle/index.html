@@ -16,12 +16,13 @@
     <div class="brand">汇报成稿 <span>BriefDeck</span></div>
     <div class="header-actions">
       <details id="library" class="library">
-        <summary class="button secondary">我的 PPT <span aria-hidden="true">⌄</span></summary>
+        <summary class="button secondary">我的 PPT <span class="library-chevron" aria-hidden="true"></span></summary>
         <div class="library-panel">
           <div class="library-actions">
             <button id="new-draft" class="text-button" type="button">新建空白</button>
-            <button id="save-example" class="text-button" type="button" hidden>保存示例</button>
+            <button id="save-draft" class="text-button" type="button" disabled>保存当前 PPT</button>
           </div>
+          <p id="draft-save-state" class="draft-detail" role="status" hidden></p>
           <p id="library-empty">还没有保存的 PPT。</p>
           <ul id="draft-list" aria-label="保存的 PPT"></ul>
           <p id="library-location" class="draft-detail"></p>
@@ -113,6 +114,16 @@
       <div class="dialog-actions">
         <button class="button secondary" value="cancel" autofocus>取消</button>
         <button class="button primary" value="replace">继续</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="delete-dialog" aria-labelledby="delete-title">
+    <form method="dialog">
+      <h2 id="delete-title">删除 PPT</h2>
+      <p id="delete-message"></p>
+      <div class="dialog-actions">
+        <button class="button secondary" value="cancel" autofocus>取消</button>
+        <button class="button danger" value="delete">删除</button>
       </div>
     </form>
   </dialog>

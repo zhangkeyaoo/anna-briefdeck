@@ -43,6 +43,13 @@ button:disabled { cursor: default; opacity: .52; }
 .library { position: relative; }
 .library summary { list-style: none; cursor: pointer; white-space: nowrap; }
 .library summary::-webkit-details-marker { display: none; }
+.library .library-chevron {
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+}
 .library-panel {
   position: absolute;
   top: calc(100% + 8px);
@@ -58,10 +65,14 @@ button:disabled { cursor: default; opacity: .52; }
 .library-actions { display: flex; justify-content: space-between; gap: 10px; padding: 0 3px 8px; }
 #library-empty { padding: 6px 3px; color: #53665e; }
 #draft-list { padding: 0; margin: 0; list-style: none; overflow: auto; max-height: min(50vh, 330px); }
+#draft-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px; }
 .draft-entry { width: 100%; padding: 7px 9px; border: 0; border-radius: 8px; text-align: left; background: transparent; color: inherit; }
 .draft-entry:hover, .draft-entry[aria-current="true"] { background: #e3f3df; }
 .draft-title { display: block; overflow-wrap: anywhere; font-weight: 700; }
 .draft-detail { font-size: 12px; color: #53665e; }
+#draft-save-state { padding: 0 3px 8px; }
+.library .draft-delete { padding: 6px 8px; white-space: nowrap; color: #943126; }
+.button.danger { background: #9b302e; color: #fff; }
 #library-location { padding: 8px 3px 0; }
 #library-status { margin: 0 0 8px; }
 @media (max-width: 500px) {
