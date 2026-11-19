@@ -79,7 +79,7 @@
 | staging 完整 slug | `@keyzhang/briefdeck` |
 | 审核和发布状态 | 当前测试版本 `0.1.2`（草稿 rev 4，版本 ID 683），App 状态 `draft`，尚未提交审核 |
 | 其他账号可访问 | 待验证 |
-| GitHub | 待连接远程仓库 |
+| GitHub | [zhangkeyaoo/anna-briefdeck](https://github.com/zhangkeyaoo/anna-briefdeck)，开发基线 `5f1078d` 已推送到 `main` |
 
 ## 进展
 
