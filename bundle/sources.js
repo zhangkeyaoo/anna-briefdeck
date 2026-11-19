@@ -10,10 +10,10 @@ export function sourceKind(name) {
   if (Object.hasOwn(pictureTypes, extension)) return "image";
 }
 
-export async function readSource(file, kind) {
+export async function readSource(file, kind, previewEdge = 80) {
   if (!file.size) throw new Error("文件为空。");
   if (file.size > sourceLimits.bytes) throw new Error("单个文件不能超过 5 MB。");
-  if (kind === "image") return readPicture(file);
+  if (kind === "image") return readPicture(file, previewEdge);
   let text;
   try {
     text = kind === "docx" ? await readWord(file) : new TextDecoder("utf-8", { fatal: true }).decode(await file.arrayBuffer());
@@ -23,6 +23,15 @@ export async function readSource(file, kind) {
   }
   if (!text.trim()) throw new Error("未找到可用文字。");
   return { text: text.trim() };
+}
+
+export async function readSlidePicture(file) {
+  if (sourceKind(file.name) !== "image") throw new Error("插图支持 PNG 和 JPEG。");
+  const { preview, image, width, height } = await readSource(file, "image", 960);
+  return {
+    name: file.name, preview, width, height,
+    data: preview.toDataURL(image.mimeType, 0.9)
+  };
 }
 
 async function readWord(file) {
@@ -64,7 +73,7 @@ async function readWord(file) {
   ).filter(Boolean).join("\n");
 }
 
-async function readPicture(file) {
+async function readPicture(file, previewEdge) {
   const mimeType = pictureTypes[file.name.split(".").at(-1).toLowerCase()];
   const signature = new Uint8Array(await file.slice(0, 8).arrayBuffer());
   const magic = mimeType === "image/png" ? [137, 80, 78, 71, 13, 10, 26, 10] : [255, 216, 255];
@@ -77,29 +86,34 @@ async function readPicture(file) {
   }
   try {
     const longEdge = Math.max(bitmap.width, bitmap.height);
-    const draw = maxEdge => {
+    const preserveOriginal = longEdge <= 1800 && file.size <= 768 * 1024;
+    const draw = (maxEdge, flatten) => {
       const scale = Math.min(1, maxEdge / longEdge);
       const canvas = document.createElement("canvas");
       canvas.width = Math.max(1, Math.round(bitmap.width * scale));
       canvas.height = Math.max(1, Math.round(bitmap.height * scale));
-      const context = canvas.getContext("2d", { alpha: false });
-      context.fillStyle = "#fff";
-      context.fillRect(0, 0, canvas.width, canvas.height);
+      const context = canvas.getContext("2d", { alpha: !flatten });
+      if (flatten) {
+        context.fillStyle = "#fff";
+        context.fillRect(0, 0, canvas.width, canvas.height);
+      }
       context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
       return canvas;
     };
-    const preview = draw(80);
-    if (longEdge <= 1800 && file.size <= 768 * 1024) {
+    const preview = draw(previewEdge, previewEdge === 80 || !preserveOriginal);
+    const width = bitmap.width;
+    const height = bitmap.height;
+    if (preserveOriginal) {
       const data = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onload = () => resolve(reader.result.split(",")[1]);
         reader.onerror = reject;
         reader.readAsDataURL(file);
       });
-      return { preview, image: { type: "image", mimeType, data } };
+      return { preview, width, height, image: { type: "image", mimeType, data } };
     }
-    const data = draw(1800).toDataURL("image/jpeg", 0.86).split(",")[1];
-    return { preview, image: { type: "image", mimeType: "image/jpeg", data } };
+    const data = draw(1800, true).toDataURL("image/jpeg", 0.86).split(",")[1];
+    return { preview, width, height, image: { type: "image", mimeType: "image/jpeg", data } };
   } finally {
     bitmap.close();
   }

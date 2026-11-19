@@ -5,6 +5,7 @@ import { after, before, test } from "node:test";
 import JSZip from "jszip";
 import { chromium } from "playwright-core";
 import { sampleDeck } from "../bundle/deck.js";
+import { archiveMigration, supportPilot } from "./slide-design-fixtures.mjs";
 
 const origin = "https://briefdeck.test";
 const types = { html: "text/html", js: "text/javascript", css: "text/css" };
@@ -29,10 +30,31 @@ async function serve(route) {
   if (pathname === "/static/anna-apps/_sdk/latest/index.js") {
     return route.fulfill({ contentType: "text/javascript", body: `
       const slides = ${JSON.stringify(sampleDeck.slides)};
+      const designFixtures = ${JSON.stringify([supportPilot, archiveMigration])};
+      const readStorage = () => JSON.parse(localStorage.getItem("mockAnnaStorage") ?? "{}");
+      const storage = {
+        async list({ prefix }) {
+          return { items: Object.entries(readStorage()).filter(([key]) => key.startsWith(prefix))
+              .map(([key, value]) => ({ key, metadata: value.metadata, etag: value.etag })), next_cursor: null };
+        },
+        async get({ key }) {
+          const result = readStorage()[key];
+          return result ? { exists: true, ...result } : { exists: false };
+        },
+        async set({ key, value, metadata, if_match }) {
+          if (window.mockStorageFull) throw Error("quota_exceeded");
+          const records = readStorage();
+          if (if_match && records[key]?.etag !== if_match) throw Error("precondition_failed");
+          const etag = crypto.randomUUID();
+          records[key] = { value, metadata, etag };
+          localStorage.setItem("mockAnnaStorage", JSON.stringify(records));
+          return { etag };
+        }
+      };
       window.requests = [];
       export const AnnaAppRuntime = { async connect() {
         if (window.mockConnectionFailure) throw Error("network");
-        return { llm: { async complete(request) {
+        return { storage, llm: { async complete(request) {
           window.requests.push(request);
           const response = { stopReason: "endTurn", _meta: { quotaConsumed: 7 } };
           const input = Array.isArray(request.messages[0].content) ? request.messages[0].content[0] : request.messages[0].content;
@@ -51,9 +73,19 @@ async function serve(route) {
             _meta: { quotaConsumed: 14, maxTokens: { effective: 1500 } }
           };
           if (window.mockOutcome === "json") return { ...response, content: { text: "broken" } };
+          const fixture = designFixtures.find(fixture => fixture.notes === JSON.parse(input.text.split("\\n").at(-1)).notes);
+          if (fixture && count === fixture.slides.length) {
+            return { ...response, _meta: { quotaConsumed: 0 }, content: { text: JSON.stringify({ slides: fixture.slides }) } };
+          }
           const result = Array.from({ length: count }, (_, i) => structuredClone(slides[i % 6]));
           if (window.mockOutcome === "count") result.pop();
           if (window.mockOutcome === "long") result[1] = { title: "题".repeat(28), points: Array(3).fill("文".repeat(56)) };
+          if (window.mockOutcome === "composition") {
+            result[1].composition = "stack";
+            return { ...response, model: "mock-vision", usage: { inputTokens: 900, outputTokens: 2988, reasoningTokens: 2200 },
+              _meta: { quotaConsumed: 25.272413793103443, maxTokens: { effective: 3000 } },
+              content: { text: JSON.stringify({ slides: result }) } };
+          }
           return { ...response, content: { text: JSON.stringify({ slides: result }) } };
         } } };
       } };` });
@@ -103,7 +135,15 @@ const requests = frame => frame.evaluate(() => window.requests);
 
 async function submit(frame, confirm = false) {
   await frame.getByRole("button", { name: "使用 Anna 生成" }).click();
-  if (confirm) await frame.getByRole("button", { name: "继续" }).click();
+  const continueButton = frame.getByRole("button", { name: "继续" });
+  if (confirm && await continueButton.isVisible()) await continueButton.click();
+}
+
+async function editSlideText(frame, label, value) {
+  await frame.getByRole("button", { name: "编辑" + label, exact: true }).click();
+  const field = frame.getByRole("textbox", { name: label + "编辑框", exact: true });
+  await field.fill(value);
+  await field.press("Enter");
 }
 
 async function picture(frame, format, width = 360) {
@@ -112,8 +152,17 @@ async function picture(frame, format, width = 360) {
     canvas.width = width;
     canvas.height = 100;
     const context = canvas.getContext("2d");
-    context.font = "24px sans-serif";
-    context.fillText("18 min → 11 min", 20, 60);
+    context.fillStyle = "#e9f4ee";
+    context.fillRect(0, 0, width, canvas.height);
+    context.fillStyle = "#246b53";
+    if (width < 120) {
+      context.font = "13px Microsoft YaHei, sans-serif";
+      context.fillText("夜班", 15, 33);
+      context.fillText("待复核", 8, 60);
+    } else {
+      context.font = "24px sans-serif";
+      context.fillText("18 min → 11 min", 20, 60);
+    }
     return canvas.toDataURL("image/" + format).split(",")[1];
   }, { format, width });
   return file("chart." + format, Buffer.from(data, "base64"), "image/" + format);
@@ -311,7 +360,7 @@ browserCase("M2.1, M2.2 and M3.2 preserve inputs and draft on cancel and host fa
   assert.ok(await frame.locator("#download").isDisabled());
   await frame.getByRole("button", { name: "载入示例" }).click();
   await frame.getByRole("button", { name: "第 4 页", exact: true }).click();
-  await frame.getByLabel("要点 1").fill("编辑后保留");
+  await editSlideText(frame, "要点 1", "编辑后保留");
   await upload(frame, await picture(frame, "png"));
   await frame.getByText("图片已就绪").waitFor();
   assert.equal((await requests(frame)).length, 0);
@@ -350,6 +399,432 @@ browserCase("M2.1, M2.2 and M3.2 preserve inputs and draft on cancel and host fa
   }
 });
 
+browserCase("M2.4 applies the same varied templates to the example and simulated generated deck", async (page, frame) => {
+  const cases = [[2, "metrics"], [3, "progress"], [4, "risk"], [5, "actions"], [6, "decision"]];
+  await frame.getByRole("button", { name: "载入示例" }).click();
+  for (const [number, kind] of cases) {
+    await frame.getByRole("button", { name: `第 ${number} 页`, exact: true }).click();
+    const slide = frame.locator("#stage .slide");
+    assert.equal(await slide.getAttribute("data-layout"), kind);
+    if (kind === "metrics") {
+      for (const value of ["480 单", "18 → 11 分钟", "100%"]) {
+        assert.equal(await slide.getByText(value, { exact: true }).count(), 1);
+      }
+    }
+    if (process.env.BRIEFDECK_LAYOUT_EVIDENCE && ["metrics", "risk", "decision"].includes(kind)) {
+      await page.screenshot({ path: `${process.env.BRIEFDECK_LAYOUT_EVIDENCE}/example-${kind}.png`, fullPage: true });
+    }
+  }
+  assert.equal((await requests(frame)).length, 0);
+  await frame.getByRole("button", { name: "第 2 页", exact: true }).click();
+  const point = frame.getByRole("button", { name: "编辑要点 2", exact: true });
+  const original = await point.boundingBox();
+  await frame.evaluate(() => { window.mockOutcome = "composition"; });
+  await submit(frame, true);
+  await status(frame).filter({ hasText: /已生成 6 页/ }).waitFor();
+  assert.match(await status(frame).textContent(), /25\.27 CU.*mock-vision.*输入 900 tokens.*输出 2988 tokens.*推理 2200 tokens/);
+  for (const [number, kind] of cases) {
+    await frame.getByRole("button", { name: `第 ${number} 页`, exact: true }).click();
+    assert.equal(await frame.locator("#stage .slide").getAttribute("data-layout"), kind);
+  }
+  await frame.getByRole("button", { name: "第 2 页", exact: true }).click();
+  assert.notDeepEqual(await point.boundingBox(), original);
+  assert.equal(await frame.locator("#stage").getByText("18 → 11 分钟", { exact: true }).count(), 1);
+  if (process.env.BRIEFDECK_COMPOSITION_EVIDENCE) {
+    await frame.locator("#ppt-theme").selectOption("technology");
+    await frame.locator("#ppt-color").fill("#d7ab79");
+    await page.screenshot({ path: process.env.BRIEFDECK_COMPOSITION_EVIDENCE, fullPage: true });
+  }
+  const [request] = await requests(frame);
+  assert.match(request.messages[0].content.text, /metrics 指标/);
+});
+
+browserCase("M5.1–M5.2 render, edit and export an evidence comparison and a migration timeline", async (page, frame) => {
+  const canvas = frame.locator("#stage");
+  await frame.locator("#page-count").fill("4");
+  await frame.locator("#notes").fill(supportPilot.notes);
+  await submit(frame);
+  await status(frame).filter({ hasText: /已生成 4 页/ }).waitFor();
+  await frame.getByRole("button", { name: "第 2 页", exact: true }).click();
+  const point = i => canvas.getByRole("button", { name: `编辑要点 ${i}`, exact: true });
+  const pilot = await Promise.all([point(1).boundingBox(), point(2).boundingBox(), point(3).boundingBox()]);
+  assert.ok(pilot[0].x < pilot[1].x && pilot[2].y > pilot[1].y);
+  assert.match(await canvas.innerText(), /前\s+18 分钟[\s\S]*后\s+11 分钟/);
+  const screenshot = async name => {
+    if (process.env.BRIEFDECK_M5_EVIDENCE) {
+      await page.screenshot({ path: `${process.env.BRIEFDECK_M5_EVIDENCE}/${name}.png`, fullPage: true });
+    }
+  };
+  await screenshot("01-pilot-comparison");
+  await editSlideText(frame, "要点 1", "首次响应中位数由 18 分钟降至 12 分钟。");
+  await editSlideText(frame, "标题", "首次响应缩短 6 分钟");
+  assert.match(await canvas.innerText(), /后\s+12 分钟/);
+  const evidence = await picture(frame, "png", 58);
+  await frame.locator("#picture-file").setInputFiles(evidence);
+  await canvas.getByRole("img", { name: evidence.name }).waitFor();
+  assert.match(await canvas.innerText(), /后\s+12 分钟/);
+  const assertDownload = async (expected, fileName, pictureCount = 0) => {
+    const download = page.waitForEvent("download");
+    await frame.locator("#download").click();
+    const file = await download;
+    if (process.env.BRIEFDECK_M5_OUTPUT) await file.saveAs(`${process.env.BRIEFDECK_M5_OUTPUT}/${fileName}.pptx`);
+    const zip = await JSZip.loadAsync(await readFile(await file.path()));
+    assert.equal(zip.file(/^ppt\/slides\/slide\d+\.xml$/).length, 4);
+    const slideXml = await zip.file("ppt/slides/slide2.xml").async("string");
+    assert.match(slideXml, expected);
+    assert.equal([...slideXml.matchAll(/<p:pic>/g)].length, pictureCount);
+  };
+  await assertDownload(/<a:t>后  12 分钟<\/a:t>/, "m5-pilot", 1);
+  assert.equal((await requests(frame)).length, 1);
+
+  await frame.locator("#notes").fill(archiveMigration.notes);
+  await submit(frame, true);
+  await status(frame).filter({ hasText: /已生成 4 页/ }).waitFor();
+  await frame.getByRole("button", { name: "第 2 页", exact: true }).click();
+  const timeline = await Promise.all([point(1).boundingBox(), point(2).boundingBox(), point(3).boundingBox()]);
+  assert.ok(timeline[0].x < timeline[1].x && timeline[1].x < timeline[2].x);
+  assert.equal(timeline[0].y, timeline[2].y);
+  assert.match(await canvas.innerText(), /11 月 23 日[\s\S]*11 月 26 日[\s\S]*11 月 30 日/);
+  await screenshot("02-migration-timeline");
+  await page.setViewportSize({ width: 480, height: 900 });
+  assert.ok(await canvas.locator(".slide-text[role=button]").evaluateAll(elements => elements.every(element => {
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    const text = range.getBoundingClientRect();
+    const box = element.getBoundingClientRect();
+    return text.right <= box.right + 1 && text.top >= box.top - 1 && text.bottom <= box.bottom + 1;
+  })));
+  await assertDownload(/<a:t>11 月 30 日，核对结果后切换。<\/a:t>/, "m5-migration");
+  const calls = await requests(frame);
+  assert.equal(calls.length, 2);
+  assert.ok(calls.every(call => call.messages[0].content.text.includes("12×12 整数网格")));
+});
+
+browserCase("M1.6 and M2.5 update local styling and send style and optional instructions on Generate", async (page, frame) => {
+  const theme = frame.locator("#ppt-theme");
+  const color = frame.locator("#ppt-color");
+  const slide = frame.locator("#stage .slide");
+  const requestText = frame.locator("#ppt-instructions");
+  assert.equal(await theme.inputValue(), "minimal");
+  assert.equal(await color.inputValue(), "#3e795b");
+  assert.equal(await requestText.inputValue(), "");
+  await frame.getByRole("button", { name: "载入示例" }).click();
+  await frame.getByRole("button", { name: "第 2 页", exact: true }).click();
+  const originalText = await slide.innerText();
+  assert.equal(await slide.evaluate(el => el.style.backgroundColor), "rgb(255, 255, 255)");
+  await theme.selectOption("technology");
+  assert.equal(await color.inputValue(), "#48d7ef");
+  assert.equal(await slide.evaluate(el => el.style.backgroundColor), "rgb(11, 21, 39)");
+  assert.equal(await slide.innerText(), originalText);
+  assert.equal(await slide.getAttribute("data-layout"), "metrics");
+  if (process.env.BRIEFDECK_LAYOUT_EVIDENCE) {
+    await page.screenshot({ path: `${process.env.BRIEFDECK_LAYOUT_EVIDENCE}/example-technology.png`, fullPage: true });
+  }
+  await color.fill("#a837e0");
+  const file = page.waitForEvent("download");
+  await frame.locator("#download").click();
+  const path = await (await file).path();
+  const zip = await JSZip.loadAsync(await readFile(path));
+  const exported = await zip.file("ppt/slides/slide2.xml").async("string");
+  assert.match(exported, /val="A837E0"/);
+  assert.match(exported, /<p:bg>.*?val="34174C"/);
+  assert.match(exported, /<a:t>480 单<\/a:t>/);
+  assert.equal((await requests(frame)).length, 0);
+  await frame.getByRole("button", { name: "恢复默认" }).click();
+  assert.equal(await color.inputValue(), "#48d7ef");
+  await color.fill("#a837e0");
+  await requestText.fill("重点讲风险和下一步");
+  assert.equal((await requests(frame)).length, 0);
+  await submit(frame, true);
+  await status(frame).filter({ hasText: /已生成 6 页/ }).waitFor();
+  const calls = await requests(frame);
+  assert.equal(calls.length, 1);
+  const [request] = calls;
+  assert.match(request.messages[0].content.text, /"instructions":"重点讲风险和下一步"/);
+  assert.equal(request.maxTokens, 1800);
+  assert.deepEqual(JSON.parse(request.messages[0].content.text.split("\n").at(-1)).style, { theme: "technology", accent: "#A837E0" });
+  assert.equal(await theme.inputValue(), "technology");
+  await theme.selectOption("minimal");
+  await frame.getByRole("button", { name: "恢复默认" }).click();
+  await requestText.fill("");
+  await submit(frame, true);
+  await status(frame).filter({ hasText: /已生成 6 页/ }).waitFor();
+  const second = (await requests(frame))[1].messages[0].content.text;
+  assert.match(second, /简约风：每页聚焦一个判断/);
+  const input = JSON.parse(second.split("\n").at(-1));
+  assert.deepEqual(input.style, { theme: "minimal", accent: "#3E795B" });
+  assert.equal(input.instructions, undefined);
+});
+
+browserCase("M3.3 and M4.3 edit directly on the canvas and export the saved content", async (page, frame) => {
+  const canvas = frame.locator("#stage");
+  await frame.getByRole("button", { name: "载入示例" }).click();
+  await canvas.getByRole("button", { name: "编辑副标题" }).press("Enter");
+  const subtitle = canvas.getByRole("textbox", { name: "副标题编辑框" });
+  await subtitle.fill("项目负责人周会");
+  await subtitle.press("Enter");
+  assert.match(await canvas.innerText(), /项目负责人周会/);
+
+  await frame.getByRole("button", { name: "第 2 页", exact: true }).click();
+  const editTitle = canvas.getByRole("button", { name: "编辑标题" });
+  await editTitle.click();
+  const title = canvas.getByRole("textbox", { name: "标题编辑框" });
+  await title.fill("响应时间缩短，复核稳定");
+  if (process.env.BRIEFDECK_INLINE_EVIDENCE) {
+    await page.screenshot({ path: `${process.env.BRIEFDECK_INLINE_EVIDENCE}/01-title-inline-edit.png`, fullPage: true });
+  }
+  await title.press("Enter");
+  assert.equal(await editTitle.evaluate(el => document.activeElement === el), true);
+  const firstPoint = canvas.getByRole("button", { name: "编辑要点 1", exact: true });
+  await firstPoint.press("Space");
+  const pointEditor = canvas.getByRole("textbox", { name: "要点 1编辑框" });
+  await pointEditor.fill("未提交的数字 501 单");
+  await pointEditor.press("Escape");
+  assert.doesNotMatch(await canvas.innerText(), /501 单/);
+  assert.match(await canvas.innerText(), /480 单/);
+  await firstPoint.click();
+  await pointEditor.fill("本周处理 492 单");
+  const nextPoint = canvas.getByRole("button", { name: "编辑要点 2", exact: true });
+  await nextPoint.click();
+  const secondEditor = canvas.getByRole("textbox", { name: "要点 2编辑框" });
+  await secondEditor.press("Escape");
+  assert.equal(await canvas.getByText("492 单", { exact: true }).count(), 1);
+  assert.doesNotMatch(await canvas.innerText(), /480 单/);
+
+  await frame.getByRole("button", { name: "第 4 页", exact: true }).click();
+  await frame.getByRole("button", { name: "第 2 页", exact: true }).click();
+  assert.match(await canvas.innerText(), /响应时间缩短，复核稳定/);
+  assert.match(await canvas.innerText(), /492 单/);
+  assert.equal(await canvas.locator(".slide").getAttribute("data-layout"), "metrics");
+  const download = page.waitForEvent("download");
+  await frame.locator("#download").click();
+  const file = await download;
+  if (process.env.BRIEFDECK_INLINE_PPTX) await file.saveAs(process.env.BRIEFDECK_INLINE_PPTX);
+  const pptx = await JSZip.loadAsync(await readFile(await file.path()));
+  const cover = await pptx.file("ppt/slides/slide1.xml").async("string");
+  const metrics = await pptx.file("ppt/slides/slide2.xml").async("string");
+  assert.match(cover, /<a:t>项目负责人周会<\/a:t>/);
+  assert.match(metrics, /<a:t>响应时间缩短，复核稳定<\/a:t>/);
+  assert.match(metrics, /<a:t>492 单<\/a:t>/);
+  assert.equal((await requests(frame)).length, 0);
+});
+
+browserCase("M3.4 and M4.4 edit independent pictures and export their geometry without calling Anna", async (page, frame) => {
+  const canvas = frame.locator("#stage");
+  const selectFile = frame.locator("#picture-file");
+  const takeScreenshot = async name => {
+    if (process.env.BRIEFDECK_PICTURE_EVIDENCE) {
+      await page.screenshot({ path: `${process.env.BRIEFDECK_PICTURE_EVIDENCE}/${name}.png`, fullPage: true });
+    }
+  };
+  await frame.getByRole("button", { name: "载入示例" }).click();
+  await frame.getByRole("button", { name: "第 2 页", exact: true }).click();
+  const textState = () => canvas.locator(".slide-text").evaluateAll(elements =>
+    elements.map(element => [element.textContent, element.getAttribute("style")]));
+  const original = await textState();
+  const landscape = await picture(frame, "png", 360);
+  const portrait = await picture(frame, "jpeg", 58);
+  const extra = { ...(await picture(frame, "png", 130)), name: "另外一张.png" };
+  const choose = page.waitForEvent("filechooser", { timeout: 5000 });
+  await frame.getByRole("button", { name: "插入图片" }).click();
+  await (await choose).setFiles([landscape, portrait]);
+  const figure = canvas.getByRole("group", { name: landscape.name, exact: true });
+  const vertical = canvas.getByRole("group", { name: portrait.name, exact: true });
+  await vertical.waitFor();
+  assert.equal(await canvas.getByRole("img").count(), 2);
+  assert.equal(await frame.locator("#picture-status").textContent(), "");
+  assert.equal(await figure.getByRole("button", { name: /移除图片/ }).count(), 0);
+  assert.equal(await vertical.getByRole("button", { name: /移除图片/ }).count(), 1);
+  assert.deepEqual(await textState(), original);
+  const before = await figure.boundingBox();
+  const drag = async (x, y, dx, dy) => {
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    await page.mouse.move(x + dx, y + dy, { steps: 6 });
+    await page.mouse.up();
+  };
+  await drag(before.x + 15, before.y + 10, -170, -300);
+  const moved = await figure.boundingBox();
+  assert.ok(moved.y < before.y - 200);
+  assert.ok(moved.x < before.x - 130);
+  await drag(moved.x + moved.width - 5, moved.y + moved.height - 5, 28, 12);
+  const resized = await figure.boundingBox();
+  assert.ok(resized.width > moved.width + 20);
+  assert.ok(Math.abs(resized.width / resized.height - 3.6) < 0.03);
+  const verticalBounds = await vertical.boundingBox();
+  assert.ok(Math.abs(verticalBounds.width / verticalBounds.height - 0.58) < 0.02);
+  assert.deepEqual(await textState(), original);
+  await frame.getByRole("button", { name: "第 4 页", exact: true }).click();
+  assert.equal(await canvas.getByRole("img").count(), 0);
+  await frame.getByRole("button", { name: "第 2 页", exact: true }).click();
+  await frame.locator("#ppt-theme").selectOption("technology");
+  assert.deepEqual(await figure.boundingBox(), resized);
+  await selectFile.setInputFiles([extra, file("损坏.png"), file("超限.png", Buffer.alloc(5 * 1024 * 1024 + 1))]);
+  const feedback = frame.locator("#picture-status").filter({ hasText: /图片内容与格式不符/ });
+  await feedback.waitFor();
+  assert.match(await feedback.innerText(), /不能超过 5 MB/);
+  assert.doesNotMatch(await feedback.innerText(), /添加.*张图片/);
+  assert.equal(await canvas.getByRole("img").count(), 3);
+  await editSlideText(frame, "要点 1", "本周已核对 480 单");
+  const originalVertical = await vertical.boundingBox();
+  await vertical.focus();
+  await vertical.press("ArrowUp");
+  const movedVertical = await vertical.boundingBox();
+  assert.ok(movedVertical.y < originalVertical.y);
+  await vertical.press("Shift+ArrowLeft");
+  assert.ok((await vertical.boundingBox()).width < movedVertical.width);
+  await frame.getByRole("button", { name: "第 4 页", exact: true }).click();
+  await frame.getByRole("button", { name: "第 2 页", exact: true }).click();
+  assert.equal(await canvas.getByRole("button", { name: /移除图片/ }).count(), 0);
+  await frame.getByRole("combobox", { name: "选择本页图片" }).selectOption("0");
+  assert.equal(await figure.getAttribute("data-selected"), "true");
+  const remove = figure.getByRole("button", { name: `移除图片 ${landscape.name}` });
+  assert.equal(await frame.locator("#picture-controls").getByRole("button", { name: /移除图片/ }).count(), 0);
+  const [buttonBounds, imageBounds] = await Promise.all([remove.boundingBox(), figure.boundingBox()]);
+  assert.ok(Math.abs(buttonBounds.y - imageBounds.y) < 1);
+  assert.ok(Math.abs(buttonBounds.x + buttonBounds.width - imageBounds.x - imageBounds.width) < 1);
+  await takeScreenshot("07-inline-picture-delete");
+  const stageBounds = await canvas.locator(".slide").boundingBox();
+  const expected = page.waitForEvent("download");
+  await frame.locator("#download").click();
+  const downloaded = await expected;
+  if (process.env.BRIEFDECK_PICTURE_PPTX) await downloaded.saveAs(process.env.BRIEFDECK_PICTURE_PPTX);
+  const zip = await JSZip.loadAsync(await readFile(await downloaded.path()));
+  const slideXml = await zip.file("ppt/slides/slide2.xml").async("string");
+  const images = [...slideXml.matchAll(/<p:pic>.*?<\/p:pic>/gs)];
+  assert.equal(images.length, 3);
+  const geometry = images[0][0].match(/<a:off x="(\d+)" y="(\d+)"\/>\s*<a:ext cx="(\d+)" cy="(\d+)"\/>/);
+  assert.ok(geometry);
+  const [x, y, w, h] = geometry.slice(1).map(value => Number(value) / 914400);
+  for (const [actual, expected] of [[x, (resized.x - stageBounds.x) * 13.333333 / stageBounds.width], [y, (resized.y - stageBounds.y) * 7.5 / stageBounds.height], [w, resized.width * 13.333333 / stageBounds.width], [h, resized.height * 7.5 / stageBounds.height]]) {
+    assert.ok(Math.abs(actual - expected) < 0.025, `exported geometry ${actual} differs from preview ${expected}`);
+  }
+  assert.match(slideXml, /<a:t>本周已核对 480 单<\/a:t>/);
+  assert.match(slideXml, /<a:t>480 单<\/a:t>/);
+  assert.doesNotMatch(await zip.file("ppt/slides/slide4.xml").async("string"), /<p:pic[ >]/);
+
+  await remove.click();
+  assert.equal(await figure.count(), 0);
+  assert.equal(await canvas.getByRole("img").count(), 2);
+  assert.equal(await frame.locator("#picture-status").textContent(), "");
+  assert.equal(await canvas.locator(".slide").getAttribute("data-layout"), "metrics");
+  const withoutPicture = page.waitForEvent("download");
+  await frame.locator("#download").click();
+  const removed = await JSZip.loadAsync(await readFile(await (await withoutPicture).path()));
+  const remaining = await removed.file("ppt/slides/slide2.xml").async("string");
+  assert.equal([...remaining.matchAll(/<p:pic[ >]/g)].length, 2);
+  await vertical.focus();
+  await vertical.press("Delete");
+  assert.equal(await canvas.getByRole("img").count(), 1);
+  assert.equal(await frame.locator("#picture-status").textContent(), "");
+  assert.equal((await requests(frame)).length, 0);
+});
+
+browserCase("M6.1 restores independent generated drafts, including pictures, after refresh", async (page, frame) => {
+  const menu = frame.locator("#library > summary");
+  const list = frame.getByRole("list", { name: "保存的 PPT" });
+  const selectDraft = name => list.getByRole("button", { name });
+  const canvas = frame.locator("#stage");
+  await frame.locator("#notes").fill("第一份稿件资料");
+  await frame.locator("#page-count").fill("4");
+  await submit(frame);
+  await status(frame).filter({ hasText: /已生成 4 页/ }).waitFor();
+  await editSlideText(frame, "标题", "四页方案甲");
+  await frame.locator("#ppt-theme").selectOption("technology");
+  await frame.locator("#ppt-color").fill("#a438a6");
+  const evidence = await picture(frame, "png", 58);
+  await frame.locator("#picture-file").setInputFiles(evidence);
+  const figure = canvas.getByRole("group", { name: evidence.name });
+  await figure.waitFor();
+  await figure.focus();
+  await figure.press("ArrowLeft");
+  const placement = await figure.boundingBox();
+
+  await frame.locator("#notes").fill("第二份稿件资料");
+  await frame.locator("#page-count").fill("6");
+  await submit(frame);
+  await status(frame).filter({ hasText: /已生成 6 页/ }).waitFor();
+  await frame.locator("#ppt-theme").selectOption("minimal");
+  await frame.getByRole("button", { name: "恢复默认" }).click();
+  await editSlideText(frame, "标题", "六页方案乙");
+  assert.equal((await requests(frame)).length, 2);
+  await menu.click();
+  await selectDraft(/四页方案甲.*4 页/).click();
+  await figure.waitFor();
+  assert.deepEqual(await figure.boundingBox(), placement);
+  assert.equal(await frame.locator("#ppt-theme").inputValue(), "technology");
+  assert.equal(await frame.locator("#ppt-color").inputValue(), "#a438a6");
+  await frame.locator("#ppt-color").fill("#d7ab79");
+  await menu.click();
+  await selectDraft(/六页方案乙.*6 页/).click();
+  assert.equal(await frame.locator("#ppt-theme").inputValue(), "minimal");
+  assert.equal(await canvas.getByRole("img").count(), 0);
+  await menu.click();
+  if (process.env.BRIEFDECK_M6_EVIDENCE) {
+    await page.screenshot({ path: `${process.env.BRIEFDECK_M6_EVIDENCE}/01-saved-drafts.png`, fullPage: true });
+  }
+  await frame.getByRole("button", { name: "新建空白" }).click();
+  assert.ok(await frame.locator("#download").isDisabled());
+  assert.equal(await frame.locator("#notes").inputValue(), "");
+  assert.equal((await requests(frame)).length, 2);
+
+  await page.reload();
+  const reopened = page.frames().find(item => item.parentFrame());
+  await reopened.locator("#library > summary").click();
+  await reopened.getByRole("button", { name: /四页方案甲.*4 页/ }).click();
+  const reopenedCanvas = reopened.locator("#stage");
+  await reopenedCanvas.getByRole("img", { name: evidence.name }).waitFor();
+  assert.equal(await reopened.locator("#ppt-color").inputValue(), "#d7ab79");
+  assert.equal(await reopened.locator("#ppt-theme").inputValue(), "technology");
+  const exporting = page.waitForEvent("download");
+  await reopened.locator("#download").click();
+  const zip = await JSZip.loadAsync(await readFile(await (await exporting).path()));
+  assert.equal(zip.file(/^ppt\/slides\/slide\d+\.xml$/).length, 4);
+  const first = await zip.file("ppt/slides/slide1.xml").async("string");
+  assert.match(first, /四页方案甲/);
+  assert.match(first, /<p:pic>/);
+  assert.equal((await requests(reopened)).length, 0);
+});
+
+browserCase("M6.2 leaves sample saving explicit and retains in-memory drafts when storage is full", async (page, frame) => {
+  const menu = frame.locator("#library > summary");
+  const list = frame.getByRole("list", { name: "保存的 PPT" });
+  await frame.getByRole("button", { name: "载入示例" }).click();
+  await menu.click();
+  await frame.getByText("还没有保存的 PPT。").waitFor();
+  assert.equal(await list.getByRole("button").count(), 0);
+  await frame.evaluate(() => { window.mockStorageFull = true; });
+  await frame.getByRole("button", { name: "保存示例" }).click();
+  await frame.locator("#library-status").filter({ hasText: /未能保存/ }).waitFor();
+  await frame.getByRole("button", { name: "新建空白" }).click();
+  await menu.click();
+  await list.getByRole("button", { name: /客服工单分流试点.*6 页/ }).click();
+  const exporting = page.waitForEvent("download");
+  await frame.locator("#download").click();
+  await exporting;
+  assert.equal((await requests(frame)).length, 0);
+
+  await page.goto(origin + "/bundle/index.html");
+  await page.getByRole("button", { name: "载入示例" }).click();
+  await page.locator("#library > summary").click();
+  await page.getByRole("button", { name: "保存示例" }).click();
+  await page.waitForFunction(() => new Promise(resolve => {
+    const open = indexedDB.open("briefdeck-library");
+    open.onsuccess = () => {
+      const database = open.result;
+      const count = database.transaction("decks").objectStore("decks").count();
+      count.onsuccess = () => {
+        resolve(count.result === 1);
+        database.close();
+      };
+    };
+  }));
+  await page.reload();
+  await page.locator("#library > summary").click();
+  await page.getByRole("button", { name: /客服工单分流试点.*6 页/ }).click();
+  assert.match(await page.locator("#stage").innerText(), /客服工单分流试点/);
+});
+
 browserCase("M3.1, M4.1 and M4.2 keep preview, paging and actual downloads consistent", async (page, frame) => {
   await frame.getByRole("button", { name: "载入示例" }).click();
   const sampleDownload = page.waitForEvent("download");
@@ -362,7 +837,7 @@ browserCase("M3.1, M4.1 and M4.2 keep preview, paging and actual downloads consi
     await status(frame).filter({ hasText: new RegExp(`已生成 ${count} 页`) }).waitFor();
     assert.equal(await frame.locator("#pages button").count(), count);
     await frame.getByRole("button", { name: `第 ${count} 页`, exact: true }).click();
-    await frame.getByLabel("标题", { exact: true }).fill("最后一页修改");
+    await editSlideText(frame, "标题", "最后一页修改");
     await frame.getByRole("button", { name: "封面", exact: true }).click();
     await frame.getByRole("button", { name: `第 ${count} 页`, exact: true }).click();
     assert.match(await frame.locator("#stage").innerText(), /最后一页修改/);

@@ -14,7 +14,21 @@
   <header class="app-header">
     <div class="brand-icon" aria-hidden="true"><i></i><i></i><i></i></div>
     <div class="brand">汇报成稿 <span>BriefDeck</span></div>
-    <button id="download" class="button secondary download" type="button" disabled>下载 PPTX <span aria-hidden="true">↓</span></button>
+    <div class="header-actions">
+      <details id="library" class="library">
+        <summary class="button secondary">我的 PPT <span aria-hidden="true">⌄</span></summary>
+        <div class="library-panel">
+          <div class="library-actions">
+            <button id="new-draft" class="text-button" type="button">新建空白</button>
+            <button id="save-example" class="text-button" type="button" hidden>保存示例</button>
+          </div>
+          <p id="library-empty">还没有保存的 PPT。</p>
+          <ul id="draft-list" aria-label="保存的 PPT"></ul>
+          <p id="library-location" class="draft-detail"></p>
+        </div>
+      </details>
+      <button id="download" class="button secondary" type="button" disabled>下载 PPTX <span aria-hidden="true">↓</span></button>
+    </div>
   </header>
   <main class="workspace">
     <section class="brief panel" aria-labelledby="input-title">
@@ -48,6 +62,23 @@
           <button id="example" class="text-button" type="button">载入示例</button>
           <span id="length">文字 0 / 6000</span>
         </div>
+        <div class="form-settings style-settings">
+          <label for="ppt-theme">PPT 风格
+            <select id="ppt-theme">
+              <option value="minimal">简约风</option>
+              <option value="technology">科技风</option>
+            </select>
+          </label>
+          <div>
+            <label for="ppt-color">主色 <span>选填</span></label>
+            <div class="color-setting">
+              <input id="ppt-color" type="color" value="#3e795b">
+              <button id="reset-color" class="text-button" type="button" hidden>恢复默认</button>
+            </div>
+          </div>
+        </div>
+        <label for="ppt-instructions">PPT 制作要求 <span>选填</span></label>
+        <textarea id="ppt-instructions" rows="2" maxlength="300" placeholder="例如：重点讲风险和下一步，语气简明"></textarea>
         <button id="generate" class="button primary" type="submit">使用 Anna 生成 <span aria-hidden="true">→</span></button>
         <p id="status" class="status" role="status" aria-live="polite">示例、编辑和下载不消耗 Anna 额度。</p>
       </form>
@@ -57,6 +88,7 @@
         <h2 id="editor-title">幻灯片预览</h2>
         <span id="position"></span>
       </div>
+      <p id="library-status" class="status" role="status" data-kind="error" hidden></p>
       <div id="stage" class="stage" data-empty="true">
         <div class="empty-slide">
           <p>从项目资料开始</p>
@@ -64,10 +96,14 @@
         </div>
       </div>
       <nav id="pages" class="pages" aria-label="幻灯片页面" hidden></nav>
-      <section id="fields" class="slide-fields" aria-label="编辑当前页" hidden>
-        <h3>编辑当前页</h3>
-        <div id="field-list"></div>
-      </section>
+      <div id="picture-controls" class="picture-controls" hidden>
+        <button id="insert-picture" class="button secondary" type="button">插入图片</button>
+        <select id="picture-picker" aria-label="选择本页图片" hidden></select>
+        <input id="picture-file" type="file" accept=".png,.jpg,.jpeg" multiple hidden>
+        <span id="picture-hint" hidden>拖动图片移动，拖动右下角等比缩放。</span>
+        <span id="picture-status" role="status" data-kind="error"></span>
+      </div>
+      <p id="edit-hint" class="edit-hint" hidden>点击幻灯片文字编辑。Enter 保存，Esc 取消。</p>
     </section>
   </main>
   <dialog id="replace-dialog" aria-labelledby="replace-title">

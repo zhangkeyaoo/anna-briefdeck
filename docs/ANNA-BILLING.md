@@ -22,7 +22,13 @@
 
 在 `0.1.1` 的 5 页请求里，BriefDeck 配置的上限是 `5 × 300 = 1500` 输出 tokens。Anna 返回的 `stopReason` 为 `maxTokens`，触发了 BriefDeck 自己写的截断提示。原提示建议缩短笔记，容易误解为输入超限。用户报告消耗 14 CU，当时界面没有保存实际模型、有效上限、输入/输出或推理用量，无法据此反算账单。
 
-`0.1.2` 中 5 页含图请求的配置上限为 3000，纯文字仍为 1500。它要求更紧凑的输出，平台提供用量时也会在失败提示里显示。真实修复效果仍待复测，输出上限也不等于 CU 上限。 [M2.3 失败证据](TEST-CASES.md) · [实际额度记录](DELIVERY.md)
+`0.1.2` 起，5 页含图请求的配置上限为 3000，纯文字仍为 1500。用户在 `0.1.3` 生成成功，界面报告 **25.272413793103443 CU、2988 输出 tokens、有效上限 3000**。2988 是宿主返回的输出计量，用户输入的短句不是完整输入。实际模型、输入和推理用量未记录，无法把这次 CU 分摊到图片、正文和隐藏推理。应用已传 `thinking: false`，宿主回执才能确认是否真正关闭。输出上限也不等于 CU 上限。 [M2.3 验收记录](TEST-CASES.md) · [0.1.3 提示词](ANNA-PROMPT-013.md) · [Anna 推理控制说明](https://staging.anna.partners/developers/apps/llm-and-agent.md#32b-thinking-models-thinking)
+
+新版诊断在宿主提供数据时展示实际模型、输入、输出和推理 tokens，界面把 CU 显示到两位小数。写出紧凑的逐页构图和文案只需一次请求，浏览器据此排版与导出。追加一次模型调用来读文字设计稿会再次计入输入和输出，实际消耗须按模型及回执判断。
+
+## 生成配图
+
+Anna App 可通过 `anna.image.generate` 或 `generateAsync` 单独请求配图，也支持 `image.edit`。文档说明用量受模型、张数、画质或分辨率影响。异步生成提交时预扣，按实际生成张数结算，接口返回估算和最终用量字段。BriefDeck 当前只调用一次 `llm.complete`，用视觉模型读入截图。配图适合作为由用户单独触发的功能，先做一张封面或正文插图。 [Anna 图片 Host API](https://anna.partners/developers/reference/host-api-image.md)
 
 ## 可避免的扣费
 

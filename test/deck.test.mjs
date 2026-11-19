@@ -4,6 +4,8 @@ import JSZip from "jszip";
 import PptxGenJS from "pptxgenjs";
 import { makeRequest, parseDeck, sampleDeck, sampleNotes, validPageCount } from "../bundle/deck.js";
 import { createPresentation, fileName } from "../bundle/export.js";
+import { dimensions, movePicture, placePicture, resizePicture, slideLayout, themePalette } from "../bundle/layout.js";
+import { archiveMigration, supportPilot } from "./slide-design-fixtures.mjs";
 
 const response = (text, stopReason = "endTurn") => ({ content: { text }, stopReason });
 
@@ -54,8 +56,168 @@ test("M1.1 and M2.2 use one bounded request with text, document and image", () =
   assert.match(mixed.messages[0].content[0].text, /恰好 12 页/);
   assert.match(mixed.messages[0].content[0].text, /"项目组"/);
   assert.match(mixed.messages[0].content[0].text, /480 单/);
+  assert.match(mixed.messages[0].content[0].text, /metrics 指标/);
+  assert.match(mixed.messages[0].content[0].text, /用一句话写出结论/);
   assert.deepEqual(mixed.messages[0].content[1], images[0]);
   assert.ok(mixed.modelPreferences);
+});
+
+test("M2.4 renders distinct semantic layouts, preserves source metrics and falls back for unknown layouts", async () => {
+  const slides = parseDeck(response(JSON.stringify(sampleDeck))).slides;
+  const names = slides.map((slide, i) => slideLayout(slide, i, slides.length).name);
+  assert.deepEqual(names, ["cover", "metrics", "progress", "risk", "actions", "decision"]);
+  const metrics = slideLayout(slides[1], 1, slides.length);
+  for (const value of ["480 单", "18 → 11 分钟", "100%"]) {
+    assert.ok(metrics.elements.some(element => element.kind === "text" && element.value === value));
+  }
+  const noFigures = slideLayout({ layout: "metrics", title: "待复核", points: ["汇报材料未提供指标。"] }, 1, 4);
+  assert.ok(noFigures.elements.some(element => element.value === "汇报材料未提供指标。"));
+  assert.ok(!noFigures.elements.some(element => element.size >= 32));
+  const unknown = deckOf(4);
+  unknown.slides[1].layout = "custom-code";
+  unknown.slides[1].composition = "custom-code";
+  const safe = parseDeck(response(JSON.stringify(unknown)), 4);
+  assert.equal(slideLayout(safe.slides[1], 1, 4).name, "summary");
+  assert.equal(safe.slides[1].composition, undefined);
+  const alternatives = deckOf(4);
+  alternatives.slides[1].composition = "stack";
+  const stacked = parseDeck(response(JSON.stringify(alternatives)), 4).slides[1];
+  assert.equal(stacked.composition, "stack");
+  const stackedElements = slideLayout(stacked, 1, 4).elements;
+  assert.notDeepEqual(stackedElements.filter(item => item.kind === "rect"), metrics.elements.filter(item => item.kind === "rect"));
+  for (const value of ["480 单", "18 → 11 分钟", "100%"]) {
+    assert.ok(stackedElements.some(item => item.value === value));
+  }
+  const pptx = await JSZip.loadAsync(await createPresentation({ slides }, PptxGenJS).write({ outputType: "nodebuffer" }));
+  const metricXml = await pptx.file("ppt/slides/slide2.xml").async("string");
+  assert.match(metricXml, /<a:t>18 → 11 分钟<\/a:t>/);
+  assert.match(metricXml, /<a:t>480 单<\/a:t>/);
+  assert.match(await pptx.file("ppt/slides/slide4.xml").async("string"), /<a:t>风险与应对<\/a:t>/);
+});
+
+test("M5.1–M5.2 validate flexible geometry and export it as native text and shapes", async () => {
+  const pilot = parseDeck(response(JSON.stringify(supportPilot)), 4);
+  const migration = parseDeck(response(JSON.stringify(archiveMigration)), 4);
+  const compare = slideLayout(pilot.slides[1], 1, 4);
+  const timeline = slideLayout(migration.slides[1], 1, 4);
+  assert.ok(compare.elements.some(item => item.value === "前  18 分钟"));
+  assert.ok(compare.elements.some(item => item.value === "后  11 分钟"));
+  const positions = timeline.elements.filter(item => typeof item.field === "number");
+  assert.equal(new Set(positions.map(item => item.x)).size, 3);
+  assert.equal(new Set(positions.map(item => item.y)).size, 1);
+
+  const plotBelow = structuredClone(supportPilot);
+  plotBelow.slides[1].design = [[0, "compare", 0, 5, 12, 7], [1, "focus", 0, 0, 6, 5], [2, "text", 6, 0, 6, 5]];
+  const alternative = parseDeck(response(JSON.stringify(plotBelow)), 4);
+  const findPoint = layout => layout.elements.find(item => item.field === 0);
+  const shifted = findPoint(slideLayout(alternative.slides[1], 1, 4));
+  assert.ok(shifted.y > findPoint(compare).y);
+  assert.equal(shifted.value, findPoint(compare).value);
+  const binary = await createPresentation(alternative, PptxGenJS).write({ outputType: "nodebuffer" });
+  const zipped = await JSZip.loadAsync(binary);
+  const xml = await zipped.file("ppt/slides/slide2.xml").async("string");
+  assert.match(xml, /<a:t>后  11 分钟<\/a:t>/);
+  assert.match(xml, new RegExp(`y="${Math.round(shifted.y * 914400)}"`));
+  assert.doesNotMatch(xml, /<p:pic>/);
+  for (const value of ["由 -18 分钟升至 -11 分钟。", "响应速度已有改善。"]) {
+    const changed = structuredClone(pilot.slides[1]);
+    changed.points[0] = value;
+    const rendered = slideLayout(changed, 1, 4).elements;
+    assert.equal(rendered.length, compare.elements.length);
+    assert.ok(rendered.some(item => item.field === 0 && item.value === value));
+    assert.ok(!rendered.some(item => item.value?.startsWith("前  ")));
+  }
+
+  const invalid = [
+    [[0, "compare", 7, 0, 8, 12], [1, "focus", 8, 0, 4, 6], [2, "text", 8, 6, 4, 6]],
+    [[0, "compare", 0, 0, 8, 12], [1, "focus", 7, 0, 5, 6], [2, "text", 8, 6, 4, 6]],
+    [[0, "compare", 0, 0, 8, 12], [0, "focus", 8, 0, 4, 6], [2, "text", 8, 6, 4, 6]],
+    [[0, "html", 0, 0, 8, 12], [1, "focus", 8, 0, 4, 6], [2, "text", 8, 6, 4, 6]],
+    [[0, "compare", 0, 0, 8, 12]]
+  ];
+  for (const design of invalid) {
+    const candidate = structuredClone(supportPilot);
+    candidate.slides[1].design = design;
+    const fallback = parseDeck(response(JSON.stringify(candidate)), 4);
+    assert.equal(fallback.slides[1].design, undefined);
+    assert.deepEqual(fallback.slides[1].points, pilot.slides[1].points);
+    assert.equal(slideLayout(fallback.slides[1], 1, 4).name, "metrics");
+  }
+});
+
+test("M1.6 and M2.5 send style and optional instructions in one bounded request", async () => {
+  const request = makeRequest({
+    notes: sampleNotes, audience: "", pageCount: 5, instructions: "重点讲风险和下一步",
+    style: { theme: "technology", accent: "a837e0" }
+  });
+  assert.equal(request.messages.length, 1);
+  assert.equal(request.maxTokens, 1500);
+  assert.match(request.messages[0].content.text, /恰好 5 页/);
+  assert.match(request.messages[0].content.text, /"instructions":"重点讲风险和下一步"/);
+  assert.match(request.messages[0].content.text, /保持资料中的事实/);
+  assert.match(request.messages[0].content.text, /科技风：有数据时突出量化对比/);
+  assert.deepEqual(JSON.parse(request.messages[0].content.text.split("\n").at(-1)).style, { theme: "technology", accent: "#A837E0" });
+  const bounded = makeRequest({ notes: "", audience: "", pageCount: 4, instructions: "字".repeat(301) });
+  assert.equal(JSON.parse(bounded.messages[0].content.text.split("\n").at(-1)).instructions.length, 300);
+
+  const metrics = sampleDeck.slides[1];
+  const styled = slideLayout(metrics, 1, 6, { theme: "technology", accent: "a837e0" });
+  assert.equal(styled.name, "metrics");
+  const palette = themePalette("technology", "a837e0");
+  assert.notEqual(styled.background, "0B1527");
+  assert.equal(styled.background, palette.background);
+  assert.ok(styled.elements.some(element => element.kind === "rect" && element.w > 3 && element.h > 3 && element.color === palette.forest));
+  assert.ok(styled.elements.some(element => element.kind === "rect" && element.color === "A837E0"));
+  assert.ok(styled.elements.some(element => element.value === "480 单"));
+  const file = await JSZip.loadAsync(await createPresentation(sampleDeck, PptxGenJS, { theme: "technology", accent: "a837e0" }).write({ outputType: "nodebuffer" }));
+  const xml = await file.file("ppt/slides/slide2.xml").async("string");
+  assert.match(xml, new RegExp(`<p:bg>.*?val="${palette.background}"`));
+  assert.match(xml, /val="A837E0"/);
+  assert.match(xml, /<a:t>480 单<\/a:t>/);
+});
+
+test("M5.3 keeps text contrast on large areas derived from custom colors", () => {
+  const luminance = hex => [0, 2, 4].map((offset, index) => {
+    const rgb = Number.parseInt(hex.slice(offset, offset + 2), 16) / 255;
+    const channel = rgb <= 0.04045 ? rgb / 12.92 : ((rgb + 0.055) / 1.055) ** 2.4;
+    return channel * [0.2126, 0.7152, 0.0722][index];
+  }).reduce((sum, channel) => sum + channel, 0);
+  for (const theme of ["minimal", "technology"]) {
+    for (const accent of ["D7AB79", "FF00FF", "FFFFFF", "000000"]) {
+      const palette = themePalette(theme, accent);
+      const baseline = themePalette(theme);
+      assert.notEqual(palette.forest, baseline.forest);
+      assert.notEqual(palette.sage, baseline.sage);
+      for (const [color, background] of [[palette.white, palette.forest], [palette.mint, palette.forest],
+        [palette.ink, palette.sage], [palette.ink, palette.paper], [palette.heading, palette.background],
+        [palette.muted, palette.background]]) {
+        const [light, dark] = [luminance(color), luminance(background)].sort((a, b) => b - a);
+        assert.ok((light + 0.05) / (dark + 0.05) >= 4.5, `${theme} #${accent}: #${color} over #${background}`);
+      }
+    }
+  }
+});
+
+test("M3.4 keeps text layout while bounding and scaling independent pictures", () => {
+  const pictures = [[1800, 320], [320, 1800]].map(([width, height], index) => {
+    const origin = placePicture({ width, height }, index);
+    const moved = movePicture(origin, -100, -100);
+    assert.equal(moved.x, 0);
+    assert.equal(moved.y, 0);
+    const frame = resizePicture(moved, 100, 100);
+    assert.ok(Math.abs(frame.w / frame.h - width / height) < 0.001);
+    assert.ok(frame.w <= dimensions.width + 0.001 && frame.h <= dimensions.height + 0.001);
+    const smallest = resizePicture(frame, -100, -100);
+    assert.ok(Math.abs(Math.max(smallest.w, smallest.h) - 0.25) < 0.001);
+    return { width, height, frame };
+  });
+  for (const index of [0, 1, 3]) {
+    const slide = sampleDeck.slides[index];
+    const baseline = slideLayout(slide, index, 6, { theme: "technology" });
+    const updated = slideLayout({ ...slide, pictures }, index, 6, { theme: "technology" });
+    assert.deepEqual(updated.elements.filter(item => item.kind !== "image"), baseline.elements);
+    assert.deepEqual(updated.elements.filter(item => item.kind === "image").map(item => item.picture), pictures);
+  }
 });
 
 test("M4.1 writes edited native text and correct page counts for 4, 6 and 12 slides", async () => {
