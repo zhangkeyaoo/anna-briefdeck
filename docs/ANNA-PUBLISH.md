@@ -15,4 +15,4 @@ BriefDeck 使用静态 UI 包。根目录的 `app.json` 提供展示信息，`ma
 
 在 staging 用测试版本确认真实生成、编辑和导出。通过后，开发者可以从「版本」页提交审核，也可以用 `anna-app apps submit-review`。审核绑定一个具体版本。平台批准后，从控制台发布该版本或用 `anna-app apps release <版本号>`，再用其他账号验证实际访问。 [Anna 官方发布文档](https://github.com/Anna-Partners/anna-developer-docs/blob/main/docs/apps/app-publish.md)
 
-GitHub 用于交付源码、测试与验收记录。Anna staging 的应用版本由 CLI 或开发者控制台管理。当前 staging App 仍是 `draft`，公开发布尚待真实验收和审核。 [交付进度](DELIVERY.md)
+GitHub 用于交付源码、测试与验收记录。Anna staging 的应用版本由 CLI 或开发者控制台管理。2026-11-19 已提交 `0.1.5`，平台确认状态为 `pending_review`。后续切版不会自动加入本轮审核。 [交付进度](DELIVERY.md)

@@ -32,7 +32,7 @@ M5–M8 的计划用例见[下一轮规格](NEXT-SPECS.md)。本页保留各轮�
 | M4.2 | 输入 28 字中文标题和 56 字要点，检查 480 px 与 1200 px 预览，以及 PowerPoint 中的换行和溢出。 | 浏览器、PowerPoint | **通过。** 浏览器两种宽度均已检查。用 PowerPoint 检查三份文件前两页共 30 个文本框边界，未发现溢出。截图文字按字数边界构造。<br><img src="evidence/m4/01-powerpoint-long-text.png" width="280" alt="PowerPoint 封面的长标题和副标题换行"><br><img src="evidence/m4/02-powerpoint-long-text.png" width="280" alt="PowerPoint 正文页的三个长要点均在框内"> |
 | M4.3 | 导出含多种版式的稿件，用 PowerPoint 对照封面、指标和风险或决策页。核对直接在画布上修改的文字进入文件且仍可编辑。 | 浏览器、PowerPoint | **本地通过。** 以示例为起点在画布修改副标题、指标页标题和数字，在 PowerPoint 实际打开浏览器下载的六页文件。标题与测试数字 492 单进入原生文本框，PowerPoint 二次修改后另存并重新打开成功。<br><img src="evidence/m3/02-inline-edit-native-export.png" width="280" alt="PowerPoint 中打开画布修改后导出的指标页"> |
 | M4.4 | 下载多图稿，核对图片数量、目标页、坐标和尺寸。验证图片和文字都是独立可编辑对象。移除单张后重新下载。 | 浏览器、PPTX 文件、PowerPoint | **本地通过。** ① 单图基线通过桌面验收。移动图片并另存后再打开，位置保留。<br><img src="evidence/m3/04-picture-native-export.png" width="280" alt="单图基线的独立竖图与可编辑要点"><br>② 多图版中，导出的图片坐标和尺寸与预览一致，移除一张后剩两张。PowerPoint 打开六页文件，第 2 页有三张原生图片对象和原生指标文本。移动其中一张，另外两张坐标保持不变。<br><img src="evidence/m3/06-multiple-pictures-powerpoint.png" width="280" alt="PowerPoint 打开后的第 2 页，保留三张图片和指标布局"> |
-| R1 | 校验构建包并上传。审核通过且发布后，从非开发者账号找到、打开 App 并检查使用入口。核对 GitHub 地址、App name 和 slug。 | Anna staging、GitHub | 已上传并核对 `0.1.4`（ID 685）安装入口，GitHub `main` 已同步 M5/M6。待完成新版示例验收、提审、公开发布及非开发者账号验证。 |
+| R1 | 校验构建包并上传。审核通过且发布后，从非开发者账号找到、打开 App 并检查使用入口。核对 GitHub 地址、App name 和 slug。 | Anna staging、GitHub | 已通过打包并同步 GitHub。`0.1.5`（ID 686）已提交 Anna 审核，平台返回 `pending_review`。待获批、公开发布和非开发者账号验证。 |
 
 ## M5 逐页设计
 
