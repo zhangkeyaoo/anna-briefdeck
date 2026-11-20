@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "node --test test/deck.test.mjs",
+    "test": "node --test test/deck.test.mjs test/compatibility.test.mjs test/redesign.test.mjs test/redesign-operation.test.mjs test/generation-operation.test.mjs",
     "test:browser": "npm run build && node --test test/browser.test.mjs"
   },
   "dependencies": {

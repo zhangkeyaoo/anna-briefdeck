@@ -55,6 +55,7 @@
           <span id="source-formats">DOCX、TXT、PDF、PNG、JPEG</span>
           <input id="sources" name="sources" type="file" multiple accept=".docx,.txt,.pdf,.png,.jpg,.jpeg" hidden>
         </div>
+        <p id="multi-file-hint" class="edit-hint" role="status" hidden>本次选择了多个文件，处理时间和积分消耗可能增加。建议根据资料内容合理设置页数，内容较多时建议增加页数到10页以上，防止生成失败。</p>
         <details id="source-details" class="source-details" hidden>
           <summary id="source-summary" aria-live="polite"></summary>
           <ul id="source-list" class="source-list" aria-label="已添加资料"></ul>
@@ -81,7 +82,9 @@
         <label for="ppt-instructions">PPT 制作要求 <span>选填</span></label>
         <textarea id="ppt-instructions" rows="2" maxlength="300" placeholder="例如：重点讲风险和下一步，语气简明"></textarea>
         <button id="generate" class="button primary" type="submit">使用 Anna 生成 <span aria-hidden="true">→</span></button>
-        <p id="status" class="status" role="status" aria-live="polite">示例、编辑和下载不消耗 Anna 额度。</p>
+        <button id="cancel-generation" class="button secondary" type="button" hidden>取消生成</button>
+        <p class="helper">如输出被截断，最多增加预算重试一次；每次请求都可能消耗积分，可取消后续请求。</p>
+        <p id="status" class="status" role="status" aria-live="polite">示例、编辑和下载不消耗 Anna 积分。</p>
         <details id="generation-diagnostic" hidden>
           <summary>查看本次生成诊断</summary>
           <p id="diagnostic-error"></p>
@@ -103,9 +106,22 @@
         </div>
       </div>
       <nav id="pages" class="pages" aria-label="幻灯片页面" hidden></nav>
+      <div id="redesign-controls" hidden>
+        <button id="redesign" class="button secondary" type="button">✧ AI 重新设计本页</button>
+        <p id="redesign-hint" class="edit-hint">消耗积分 · 最多4次 · 先预览</p>
+        <p id="redesign-status" class="status" role="status" aria-live="polite" hidden></p>
+      </div>
+      <p id="metric-status" class="status" role="status" hidden></p>
+      <p id="density-status" class="status" role="status" hidden></p>
+      <details id="rendering-diagnostic" hidden>
+        <summary>布局诊断日志（测试用）</summary>
+        <p class="edit-hint">分别核对模型返回、实际采用组件与回退原因。原始输出保留生成时内容，不随编辑变化。</p>
+        <pre id="rendering-output"></pre>
+        <button id="download-rendering-diagnostic" class="text-button" type="button">下载布局日志 JSON</button>
+      </details>
       <details id="layout-controls" class="layout-controls" hidden>
         <summary>更换布局 <span id="layout-page"></span><span id="layout-current"></span></summary>
-        <p class="edit-hint">仅调整当前页，保留文字与图片，不消耗 Anna 额度。</p>
+        <p class="edit-hint">免费切换，保留内容与图片。</p>
         <div id="layout-options" class="layout-options" role="group" aria-label="本页可用布局"></div>
         <div class="layout-actions">
           <button id="layout-undo" class="text-button" type="button" disabled>撤销上次切换</button>
@@ -123,6 +139,19 @@
       <p id="edit-hint" class="edit-hint" hidden>点击幻灯片文字编辑。Enter 保存，Esc 取消。</p>
     </section>
   </main>
+  <dialog id="redesign-dialog" aria-labelledby="redesign-title">
+    <h2 id="redesign-title">AI 重新设计本页</h2>
+    <p id="redesign-confirm">系统可能进行最多4次设计尝试，每次调用都可能消耗 Anna 积分。候选先预览，确认后才更改当前页；取消不退回已消耗的积分。</p>
+    <p id="redesign-progress" class="status" role="status" aria-live="polite"></p>
+    <details id="redesign-detail" hidden><summary>本次用量</summary><p id="redesign-usage" class="edit-hint"></p></details>
+    <p id="redesign-intent" class="edit-hint" hidden></p>
+    <div id="redesign-preview" class="stage" aria-label="单页设计候选预览" hidden></div>
+    <div class="dialog-actions">
+      <button id="redesign-cancel" class="button secondary" type="button">取消</button>
+      <button id="redesign-request" class="button primary" type="button">确认并生成候选</button>
+      <button id="redesign-apply" class="button primary" type="button" hidden>应用到当前页</button>
+    </div>
+  </dialog>
   <dialog id="replace-dialog" aria-labelledby="replace-title">
     <form method="dialog">
       <h2 id="replace-title">替换当前内容</h2>

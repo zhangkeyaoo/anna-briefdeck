@@ -1,10 +1,172 @@
 # BriefDeck 验收用例
 
+## 0.1.17最终GitHub交付验收（2026-11-20）
+
+| 检查 | 结果与证据 |
+| --- | --- |
+| 本地自动化完整回归 | **通过：57/57单元、48/48浏览器，无失败或跳过。** [单元原始记录](evidence/correction/unit-0.1.17-final.tap) · [浏览器原始记录](evidence/correction/browser-0.1.17-final.tap)。浏览器SDK由路由mock，不调用真实Anna。 |
+| 严格构建检查 | **通过。** npm run test:browser重建静态包，Anna CLI 0.1.64严格包校验通过；17个bundle源文件与release/bundle对应文件SHA-256一致。本轮未改功能代码。 |
+| 真实T05多文件 | **用户确认0.1.17已通过。** 本轮未独立重复付费生成，未收到本次新增原始响应/截图，不能据此声明全模型或全部视觉场景通过。 |
+| 编辑、P2/P2.5、历史、导出 | **自动化通过。** 完整浏览器覆盖示例、换页、文字编辑、布局切换、单页候选与撤销、保存恢复、原生PPTX下载/对象结构以及浏览器无脚本阻断错误。原生Office人工复核沿用下方历史证据，本轮未再全量重开PowerPoint。 |
+| 积分与上线状态 | 本轮真实模型调用0次、新增0.00积分；只做GitHub收尾，未执行正式发布或线上冒烟，不将mock或开发测试写成生产验证。 |
+
+下方原始失败、修复及各版本结果全部保留，旧“待测/待上传”状态不覆盖本节。
+
+**多文件提示追加验收：通过。** 浏览器mock验证0/2个隐藏、添加第3个显示原定文案、移除至2个隐藏；页数保持6、请求0次。专项日志release/multi-file-hint-check.log；构建及严格包校验通过，随0.1.17交付。
+
+## G1 动态预算、受控截断重试与两位积分（2026-11-20）
+
+| 验收点 | 本地结果与证据 |
+| --- | --- |
+| 动态预算及模型无关 | **通过**：4–12页预算单调、有推理余量；未传model/modelPreferences，首次不超过8192、重试不超过16384。 |
+| 强制推理截断 | **通过**：mock 3600预算、3459推理、maxTokens残缺JSON；仅重试1次且增加预算，第二次完整6页成功。 |
+| 首次成功/连续截断/非截断失败 | **通过**：成功1次、连续截断最多2次、JSON/网络错误1次；已有结构及布局校验未放宽。 |
+| 确定硬限制 | **通过**：limitedBy=model或transport且effective不高于请求时不重试，不绕过限制。 |
+| 取消与迟到 | **通过**：取消/过期回执不产出可应用稿、不启动下一次；浏览器原存储保持一致，收到回执仍累计积分。 |
+| 精确累计后显示 | **通过**：0.104×2内部0.208显示0.21；0.104×4内部0.416显示0.42；31.40172413793103显示31.40；0.1+0.2显示0.30；未知用量保留待确认。 |
+| 保存及普通界面 | **通过**：整稿保存两次原始回执及精确总量；普通界面整稿与P2.5只显示两位积分，模型/token留在隐藏诊断。 |
+| 回归范围 | npm test：57/57通过（含现有原文/历史/P2/原生PPTX）；浏览器专项5/5通过（含P2.5四次纠错/取消）；严格Anna包校验通过。日志release/generation-browser-check.log。全部mock，真实Anna调用0次。 |
+
 以 [首版功能规格](../SPEC.md) 的编号为准。每项用例在验证栏内保留历次结果和截图。实际额度和发布状态写入 [交付记录](DELIVERY.md)。
 
 所有模块契约统一见[功能规格](../SPEC.md)。本页保留各轮结果与截图；旧版本的待验收描述属于当时记录，最新结论见对应模块的最后一次复测。
 
-[资料输入](#m1-资料输入与设置) · [逐页设计](#m5-逐页设计) · [历史稿件](#m6-我的-ppt) · [P1.1](#p11-真实生成质量修复) · [P1.2](#p12-指标可视化泛化) · [P2更换布局](#p2-本地更换布局) · [验收输入](#验收输入与操作步骤)
+## P2.5最终受控纠错与积分展示（0.1.16）
+
+本节覆盖下方早期“一次调用、不自动纠错”的产品约束；旧失败与截图不删除。当前一次用户授权最多4次，每次可能计费；本轮所有响应均为mock，真实Anna调用0次、实际消耗0积分。
+
+| 验收 | 结果与证据 |
+| --- | --- |
+| 第1/2/3/4次成功即停止 | **通过。** 分别验证1/2/3/4次complete调用；2/3次请求包含累计原始设计及实际错误，第三次可换策略。第4次仅允许模型原样选择compatibleProposals，不在客户端自动套模板。最后仍先预览，未确认前原deck不变。 |
+| 具体校验错误与安全约束 | **通过。** inspectSlideDesign与parseSlideDesign共用同一接受规则；实际失败为第2元素高度4<5时，反馈明确元素、索引、实际高度和最小高度。最小尺寸、越界、重叠、原文、顺序、图片遮挡校验未放宽。第4次返回新自由网格会拒绝，不作为替代方案成功。 |
+| 四次失败、不可修复、无策略 | **通过。** 四次无效停止；受保护字段/代码、网络请求错误提前停止；有面积下界证明网格不可能且没有不同兼容方案时0请求终止。无可行第4次策略时提前停止。失败关闭后日志保持failed，不误记用户取消。<details><summary>普通用户友好失败（示例0.4积分为mock回执累计）</summary><img src="evidence/correction/03-failure.png" width="500" alt="无内部网格错误、关闭而非误记取消"></details> |
+| 取消、过期及迟到响应 | **通过。** 首次及第三次请求期间取消/过期后均不发起下一次；迟到回执仅补记本次消费。操作独立ID，原页/风格签名仍有效才可显示或应用候选，不覆盖其他页。新操作在旧请求结束前不能混入。 |
+| 累计积分1:1展示 | **通过。** 0.1+0.2+0.3+0.4显示总1积分，0.1+0.2显示0.3积分；保留0.10258620689655172原数值及科学计数法等价十进制，不四舍五入、不换算。缺消费回执明确待平台确认，不当成0。整稿生成仍是原单次链路，用量也只显示当前累计积分。<details><summary>有效候选与累计积分</summary><img src="evidence/correction/02-total-credits.png" width="500" alt="四次模拟调用仅展示总1积分，不展示每次明细"></details> |
+| 普通UI隐藏诊断 | **通过。** 普通模式隐藏布局日志、原始失败诊断、模型名、token/推理token/输出上限和重试过程；统一加载文案。debug=1可见开发面板，App iframe控制台window.briefdeckDiagnostics()仍可读取完整记录。逐次成功/失败/取消、原始输出、用量及具体原因保留；已确认操作随稿保存，未确认最近操作仅保留在当前会话。<details><summary>普通用户候选预览</summary><img src="evidence/correction/01-public-preview.png" width="500" alt="普通界面仅候选与总积分，无开发诊断入口"></details> |
+| 确认、P2、撤销、恢复、图片与导出 | **通过。** 第四次替代候选确认后，4次回执和总积分随稿保存，其他五页deepEqual，正文完整；撤销恢复原deck。旧候选确认、图片字节/位置、保存刷新恢复、原生PPTX文字/形状/图片导出，以及历史稿/P0/角色/流程/指标回归均通过。 |
+
+**完整回归：52项单元、46组浏览器、Anna严格包校验通过。** 新增成功/失败/关闭/取消/普通积分显示专项也通过。运行记录：[单元](evidence/correction/unit-final.tap)、[完整浏览器](evidence/correction/browser-final.tap)、[专项](evidence/correction/targeted-final.tap)。首轮两次回归分别发现普通截断提示仍含“输出上限”和旧测试仍等“额度不足”；前者改为友好提示，后者按新积分名称更新，旧执行文件保留在release/correction/中，未降低安全断言。
+
+修改集中于bundle/redesign-operation.js（新增驱动/累计积分）、bundle/redesign.js（校验错误属性）、bundle/slide-design.js（同一规则的具体错误）、bundle/app.js/index.html（统一加载、确认、积分和隐藏入口）、bundle/diagnostics.js（持久化逐次记录展示）；新增test/redesign-operation.test.mjs并更新既有浏览器/测试入口。没有改模型配置、整稿生成请求、排版能力、图片处理或导出架构，不增加依赖或生图。
+
+**交付边界：** mock证明状态与保护机制，不证明真实Anna四次内一定能给出优质候选；失败也可能产生积分。缺回执时只能待平台核对。开发测试版上传按用户持续授权进行，正式发布未执行；下一次付费验证仍由用户明确操作确认。功能至此冻结，不再扩展。
+
+## P2.5 AI单页重新设计（开发测试版0.1.14）
+
+**上传更新：** 用户准备真实测试后，已按授权上传0.1.14（ID695，rev16，26文件5135.4KB，ready），上传过程0次模型调用、0 CU，未正式发布。以下“未上传”保留本地阶段记录；真实Anna候选质量、协议遵循率及实际费用仍待验证。建议使用已有保存稿的一个正文页，只进行一次确认调用，保留布局日志及导出文件。
+
+**用户追加的界面收简已落实：** 原页说明、成功状态和技术用量堆叠较密；现改为一行AI提示、短操作结果及短布局卡片说明。模型名/tokens/完整用量进入折叠“本次用量”及可下载布局日志；最近一次取消/失败也有临时日志，已确认回执仍持久保存。付费确认、错误原因、原稿保留状态及编辑快捷键不删减。PPT内容/排版不变。界面专项6组回归通过，断言主成功提示及候选提示不含模型名/tokens，日志仍有原始模型和完整用量；随后另复测错误/取消路径。<details><summary>说明收简前后</summary><img src="evidence/p25/05-ui-before.png" width="450" alt="收简前主界面重复较长说明与模型用量"><img src="evidence/p25/02-applied.png" width="450" alt="收简后只保留短提示、短卡片说明，技术用量折叠"></details>
+
+整体结果：42项单元及43组全量浏览器回归通过；界面收简另做专项回归。构建与Anna严格包校验通过；PowerPoint六页36文本框、1张图片核对及原生编辑通过。所有模型响应均为mock，0次真实调用、0 CU；未上传staging。
+
+本轮只使用mock Anna，不调用真实付费模型，消耗0 CU。模型响应为测试网格，不代表真实Anna已能稳定选出更好的设计；实际协议遵循率、视觉改进和成本均待用户后续确认测试。正式整稿生成链路、模型选择及其额度配置不变；新单页调用单次输出上限900 tokens、thinking:false。
+
+| 用例 | 验证范围 | 结果与证据 |
+| --- | --- | --- |
+| P2.5.1 范围与计费 | 当前页入口与页码、正文/图片保护，先提示额度再调用，单次请求，无自动重试。 | **通过。** 封面明确禁用；打开确认框或在调用前取消均0请求。请求包含当前页完整已编辑正文、语义/兼容选项、几何及图片框，不含其他页、文件名或图片字节。每次明确生成仅一条complete请求；错误、截断、相同设计后都不重复调用。失败及取消显示平台用量，已发出请求取消不承诺退款。 |
+| P2.5.2 候选与取消 | 网格设计严格校验，不执行HTML/JS；候选有实际差异但尚未应用；取消原稿不变。 | **通过。** 预览前后原画布DOM、已保存deck一致；预览图片复制canvas，原画布图片仍在。重复/漏项、越界、重叠、不支持组件、改正文/数据/语义、代码字段、相同视觉、截断和网络失败均拒绝，原稿不变。自定义网格必须实际被采用，不能静默用安全回退冒充候选。<details><summary>未应用的只读预览与无效设计提示</summary><img src="evidence/p25/01-candidate-preview.png" width="500" alt="候选先预览，可确认应用或取消"><img src="evidence/p25/03-invalid.png" width="500" alt="无效响应被拒绝，原稿保留"></details> |
+| P2.5.3 应用、撤销与P2 | 标题、全部要点、数字、用户编辑及图片保留，只改当前页视觉；P2切换后仍能回到确认过的AI网格。 | **通过。** 编辑为492单后生成，确认只改当前页视觉；其他五页逐页deepEqual。原文和图片data/frame不变。应用后立即撤销回到原deck；再次确认后可在AI设计与简洁文字间免费切换。原P2编号回归通过，AI网格整组没有编号时不会生成02起的残缺列表。<details><summary>确认应用后的当前页</summary><img src="evidence/p25/02-applied.png" width="500" alt="确认后应用到单页，原图片和全部文字保留"></details> |
+| P2.5.4 异步、编辑和历史 | 请求后取消、迟到返回、源页/风格变化、已失效指标、保存重开与恢复原设计。 | **通过。** 取消后切到其他页，迟到响应不弹窗/应用，等待期间不允许再发一条请求；候选预览后风格变化阻止应用。来源编辑已使旧指标失效时仍能采用文字网格，不恢复旧图表；撤销也保留最新文字。保存重开恢复AI设计与回执，恢复原布局回到首次AI应用前，原文图片不回滚。旧稿无新字段照常打开。 |
+| P2.5.5 排版与原生导出 | 1200/480px候选及确认页文本边界；PPTX完整原文、几何/字体、图片以及原生可编辑性。 | **通过。** 共享slideLayout生成候选、画布和PPTX；单元核对XML中的原文、字体与几何。浏览器下载的六页PPTX由PowerPoint实际打开，共36个非空文本框、1张图片，无溢出；文字可修改，形状及图片可独立移动，未将整页导出成图片。[原生测量](evidence/p25/native-results.json)。<details><summary>PowerPoint原生导出</summary><img src="evidence/p25/04-native-confirmed.png" width="500" alt="PowerPoint中确认后的网格、文字和图片均为原生对象"></details> |
+
+**必要兼容修复记录：** 单页网格最初会被既有“指标来源失效后停用图表”分支屏蔽，导致已编辑指标页无法采用安全文字设计；已允许该分支使用text/focus网格，保留失效标记且不恢复指标图。P2选项最初截取前三项会遗漏简洁文字，已优先保留安全文字选项，便于取消重点。两项均增加针对性回归。其余首轮测试缺失导入或以未去除显示换行的字符串比较，属于测试修正；没有删除完整性断言。
+
+执行记录：[单元](evidence/p25/unit-final.tap)、[浏览器全量](evidence/p25/browser-final.tap)、[专项复测](evidence/p25/browser-targeted-final.tap)。全量与专项均只使用受路由拦截的mock SDK；模拟的多次明确点击不代表真实平台消耗。确认后的PPTX样例（本地生成物 `release/p25/confirmed.pptx`，不随Git分发）。原生复核入口`scripts/check-redesign-native.ps1`只检查本轮文件。
+
+**仍有限制：** 封面固定排版暂不支持；一次一个候选；自定义网格只允许text/focus，比较/角色/流程使用现有兼容布局。原始叙事layout、正文、metric/metrics及图片均不由模型改写。图片不能挪动或替换，增大文字遮挡的方案会拒绝；过密、阅读顺序错误、未实际采用或视觉相同的方案保持原稿，费用仍按平台实际回执。取消不等于撤销已发出的后端计费请求。当前会话支持一次视觉撤销；持久保存首次AI之前的设计供“恢复原布局”，不提供完整多级设计历史。候选未确认不保存为稿件；真实单页设计尚未验证。
+
+修改文件：bundle/redesign.js（新增）、bundle/layout.js、bundle/app.js、bundle/index.html、bundle/style.css、bundle/diagnostics.js；test/redesign.test.mjs（新增）、test/browser.test.mjs、package.json；scripts/check-redesign-native.ps1（新增）及README/SPEC/产品决策/验收/交付五份现有文档。存储沿用原slide对象的可选redesignOriginal/redesignTrace字段，不改数据库版本；不新增大型编辑器依赖。
+
+## C1–C4 真实响应通用兼容修复（本地候选，未上传）
+
+输入为用户提供的[原始布局诊断](../test/fixtures/customer-platform-diagnostic.json)及PPTX。先只读核对后再修改。新增[正反例测试](../test/compatibility.test.mjs)纳入npm test；未调用Anna，0 CU。原实测回执消耗0.5422413793103448 CU，属于历史调用。
+
+| 问题 | 根因证据 | 是否修改 | 修改理由 | 反例测试结果 |
+| --- | --- | --- | --- | --- |
+| A completion | values原文是“已处理680单”“收到客户工单800单”，旧numberPattern只接受数值；标签、引用及85%比率本身有来源。 | 是 | 明确整段引用在同一要点中的文字前缀可规范化为数值原子；不改业务数值、不从其他要点取数，不猜关系。 | 非原文引用、118中取18、负数、NaN、约数、零总量均拒绝；编辑后快照失效。不同业务36/40份90%通过。 |
+| A 两个comparison | unit为全角％，引用为半角%；values带“当前/阶段目标”前缀；非completion还带rate:null，旧规则拒绝该字段。 | 是 | 仅折叠百分号字形，null等于缺省；保留完整引用证明并增加目标位置校验，禁止把第一个目标当当前值。 | 无关两个百分比、另一指标目标、目标顺序颠倒、跨要点来源、单位不一致均拒绝；正常当前/目标、前后比较及等价百分号写法通过。 |
+| B 四步骤加并列检查 | 标题含“按序”而不含旧主题词；旧检测要求每条都匹配步骤。第5条明确“并列核对，不存在先后依赖”，不属于流程节点；空间不是初始根因。 | 是 | 只扩展明确连续步骤＋明确尾随补充，步骤仍须从第一项连续且标记类型一致；补充文字单独完整呈现，不连线。 | 仅标题“四步”、日期列表、编号问题、普通风险、跳步、混合步/阶段、未声明的穿插或尾项全部回退。2/3/5/6步及显式补充正例通过。 |
+| C 风险汇总与细项 | 原design给5条相同4×5网格，首条focus不等于显式“汇总—细项”协议；风险页lead本来不参与主证据选择。 | 否 | 不能仅凭含统计数字或首条位置认定汇总关系；新增推断会改变普通风险默认行为。 | 新旧风险页PPTX slide3 XML字节一致；角色页slide4也完全一致。不改角色组件或风险优先级。 |
+
+**结果：** 原33项单元＋新增3项兼容测试通过；3组浏览器针对回放、原多指标组合和P0编号通过。原文全文、1200/480px、独立补充编辑、P2切换撤销、保存重开及PPTX原生对象验证通过。PowerPoint本轮六页72个非空文本框无溢出，文字实际修改及形状移动通过，[原生结果](evidence/compat/native-results.json)。<details><summary>原流程与修复后的独立补充</summary><img src="evidence/compat/native-flow-before.png" width="500" alt="原流程页未识别关系"><img src="evidence/compat/flow-fixed.png" width="500" alt="浏览器四步骤及独立并列补充"><img src="evidence/compat/native-flow-fixed.png" width="500" alt="PowerPoint四节点流程不连接并列补充"></details>
+
+**重要限制：** 本例三个指标修复后均valid，但该页5条内容仍超出现有主指标＋辅助图构图范围，applied继续为false；这是保留的空间回退，未为了样例改布局默认优先级。较长引用、多个数值/范围修饰、目标关系不明确、非同类连续步骤、非明确尾随补充仍安全回退。新增识别范围仅限精确引用规范化和明确混合流程，无法由格式校验证明业务关系真实性；新的严格目标上下文会让含糊写法更保守地回退。
+
+修改文件：bundle/metric.js、bundle/relationships.js、test/compatibility.test.mjs（新增）、test/browser.test.mjs、test/fixtures/customer-platform-diagnostic.json（新增）、package.json，以及SPEC/本验收/交付记录。角色实现、风险布局、P0编号、模型与额度配置未修改。可检查本地回放PPTX（本地生成物 `release/compat/real-replay.pptx`，不随Git分发）。
+
+## V2 最后一轮关系表达与布局诊断（2026-11-20）
+
+**上传更新：** 用户随后给予开发测试版持续上传授权。本轮已上传0.1.13（ID694，rev15），25文件5110.5KB、ready。未调用模型、新增0 CU，未正式发布。下述“不上传”是本地验收阶段的当时状态；真实组件触发与视觉结果仍待用户验证。
+
+**数据与结论边界：** [视觉样例](../test/visual-fixtures.mjs)的知识库指标文案来自用户已给出的真实响应，但组合页与全部metric/metrics标注为模拟重组。跨部门完整输出未提供，问题、角色与步骤文案均明确模拟，不能作为该业务真实验收。未调用Anna，0 CU，未上传staging。
+
+| 用例 | 核对内容 | 验证结果及证据 |
+| --- | --- | --- |
+| V2.1 角色职责 | 角色和职责对照，不复制或丢失原文；5类正常职责、4–6条长中文；点击职责编辑原完整要点。 | **本地通过。** 原生对象中“角色：”和职责分别呈现，合并读取与原文逐字一致。角色标记编辑为普通文字后退出关系布局，第二条编辑仍绑定正确原点。风险/决策/指标不被自动改为职责页。<details><summary>角色列与职责列</summary><img src="evidence/visual/03-relation-roles.png" width="500" alt="五类角色分别对应职责"><img src="evidence/visual/native-visual-relations-4.png" width="500" alt="PowerPoint原生角色职责"><img src="evidence/visual/native-visual-long-relations-4.png" width="500" alt="六条长中文职责完整呈现"></details> |
+| V2.2 顺序流程与普通问题 | 明确第一步至第四步采用连接节点，保留顺序及前缀；并列机制、缺步或无序普通问题不画流程。 | **本地通过。** 原文步骤标签唯一保留，不叠加第二套编号；步骤未声明时不生成依赖。普通六项问题仍用清单/分栏。<details><summary>流程与问题清单的区别</summary><img src="evidence/visual/02-relation-sequence.png" width="500" alt="明确四步骤使用连接节点"><img src="evidence/visual/04-issues.png" width="500" alt="问题清单不伪装为执行顺序"><img src="evidence/visual/native-visual-relations-3.png" width="500" alt="原生四步骤流程"><img src="evidence/visual/native-visual-long-relations-3.png" width="500" alt="六步骤长中文边界"></details> |
+| V2.3 多指标组合与正确性 | 主4.5→1.8秒比较；辅助108/120条90%完成；辅助86%与90%目标对比；标签/来源/单位/重复索引非法回退，辅助编辑后失效。 | **本地通过，真实协议触发待验证。** 主图保留大数字、统一比例条及约60%变化；辅助图限制在原有辅助正文区域内，不重排主图；全文保留。来源修改后只移除相应辅助项，主指标保留；P2文字布局停用图形，不从文本猜新关系。<details><summary>主次图形与原生导出</summary><img src="evidence/visual/01-metric-main.png" width="500" alt="主比较与两个辅助关系"><img src="evidence/visual/native-visual-relations-2.png" width="500" alt="PowerPoint中原生组合图"><img src="evidence/visual/native-visual-long-relations-2.png" width="500" alt="边界文件中组合图仍保持原生对象"></details> |
+| V2.4 日志、P2与保存 | 模型原始字段与实际组件分别记录；角色/流程可切列表/分栏，撤销/恢复；辅助来源失效日志；下载日志含原始输出；保存重开仍能检查最初回执。 | **本地通过。** 模拟SDK完成一次生成并持久化回执，刷新后原模型mock-visual、原始输出和失效原因保留；历史无回执时明确不能认定模型已选新组件。下载JSON中originalModelText与模拟原响应完全相同，不含凭据或会话令牌。<details><summary>默认可折叠诊断框</summary><img src="evidence/visual/05-diagnostic.png" width="500" alt="可下载诊断日志，分别核对原始返回和实际呈现"></details> |
+| V2.5 稳定性与原生编辑 | 33单元、38浏览器；P0编号、长文、无数字、图片、保存恢复及导出；PowerPoint原生编辑和溢出检查。 | **通过。** 两份文件12页147个非空文本框无溢出，所有原始要点在PowerPoint再次逐条核对，文本实际修改、原生形状实际移动成功；测试后不修改源文件。[原生测量](evidence/visual/native-results.json)。浏览器1200/480px及所有文本区域不重叠检查通过。严格Anna打包校验通过。 |
+
+执行记录：[单元](evidence/visual/unit-final.tap)、[浏览器](evidence/visual/browser-final.tap)。正常关系样例PPTX（本地生成物 `release/visual/visual-relations.pptx`，不随Git分发）、长文边界PPTX（本地生成物 `release/visual/visual-long-relations.pptx`，不随Git分发）。原生复核命令为`scripts/check-visual-native.ps1`，只针对这两份文件。首轮全量中旧测试仍假设P2固定六个选项，与上轮P0“不允许后项置顶”已不符；改为枚举所有实际兼容选项、按实际页数遍历，保留全文、宽窄屏和原生导出断言，复测38组全部通过。角色原文拆为两个显示区域、标题原生换行后，旧断言更新为拼接全文核对，不降低完整性要求。旧执行文件保留在release/visual/browser-full-results.tap及release/visual-unit-first.tap。
+
+**下一次真实Anna验收必须同时满足：**
+
+1. 生成成功后展开“布局诊断日志（测试用）”，下载日志与PPTX，保留原始回执及CU。
+2. B检查对应页relationship.detected有明确语义、applied为true、实际组件含relation-roles/relation-sequence；这是前端按模型文字语义采用组件，不表示模型返回了一个新布局类型。
+3. A检查原始modelReturned.metrics确实存在、每项valid与applied均为true，不能仅因返回了metric或生成成功就判定组合图通过。没返回/校验失败/空间不足时记录具体原因。
+4. 目测PPTX主次、角色对应、执行顺序、全部事实及编辑行为。模拟图片好看或日志applied为true本身均不能代替视觉核对。此次真实验收尚未执行。
+
+**仍不支持：** 无明确标记的角色/流程不推测；并列机制不虚构顺序；辅助图限于具有足够空间的指标主证据构图，最多两项，密集4–6条或非指标叙事页可能只保留文字；不从任意数字自动生成图，不支持通用图表、多主指标或自动拆页。
+
+**修改文件清单：**
+
+| 文件 | 修改职责 |
+| --- | --- |
+| bundle/relationships.js（新增） | 语义证据识别、角色/顺序原生几何 |
+| bundle/metric.js、bundle/deck.js | 可选辅助metrics复用来源校验、编辑失效及Prompt |
+| bundle/layout.js | 关系布局接入、辅助图及兼容P2选项 |
+| bundle/diagnostics.js（新增） | 原始模型字段、实际采用组件与回退原因 |
+| bundle/app.js、bundle/index.html、bundle/style.css | 临时日志框、下载及编辑刷新 |
+| bundle/library.js | 可选成功生成回执随稿存取 |
+| test/visual-fixtures.mjs（新增）、test/deck.test.mjs、test/browser.test.mjs | 明确模拟样例、完整性、编辑/P2/日志/导出回归 |
+| test/p2-layout-fixtures.mjs | 边界样例枚举实际兼容选项，避免固定选项数假设 |
+| scripts/check-visual-native.ps1（新增） | 本轮PowerPoint原生验证与证据 |
+| SPEC.md、README.md、docs/PRODUCT-DECISIONS.md、docs/TEST-CASES.md、docs/DELIVERY.md | 统一规约、产品取舍、证据与待真实验收状态 |
+
+---
+
+## D1 自适应要点布局
+
+### D1.8 重点块编号（2026-11-20，本地修复）
+
+| 验收范围 | 结果与保留证据 |
+| --- | --- |
+| 知识库上线评审第6页：重点01及后续02–04 | **修复前不通过，用户截图保留；修复后通过。** 编号来自原point索引，重点块预留编号栏，标题不参与编号。正文根据截图转录，其余页面模拟，未声称取得本次完整Anna JSON。<details><summary>修复前后</summary><img src="evidence/numbering/00-user-reported.png" width="500" alt="用户报告重点块漏01，后续从02开始"><img src="evidence/numbering/01-focus-fixed.png" width="500" alt="修复后重点块明确01，后续02至04连续"></details> |
+| 指标、总结、风险、决策；单条、P2取消重点及切换、撤销/恢复、历史存储 | **通过。** 4类语义逐一切换首条重点/分栏/列表，所有要点完整且编号恰一次；单条为01。历史manualLayout兼容，指向后项的置顶重点回退保序布局。保存恢复核对全文与编号；标题、编号均不写入points。 |
+| 预览及原生PPTX一致 | **通过。** 浏览器1200/480px核对编号与全文无溢出；逐页导出XML核对01–04各一次，全部原文及原生文字/形状对象保留，无页面截图替代。未重复启动PowerPoint人工检查。 |
+
+本次仅运行2项针对性单元（D1.8、D1.2/D1.5）及1组浏览器回归（覆盖4类语义），均通过；没有运行全量回归、调用Anna或上传staging。当前协议没有独立摘要字段，所以此次重点块按列表成员修复，不额外生成“核心建议”摘要。平台版本保持0.1.12。
+
+**0.1.12 / D1.7：** 用户要求移除文案字数的本地硬门槛，已删除28/56字、单页600及整份6000字符拦截，旧D1.3预算拒绝结论仅保留为历史。知识库真实失败的第2页31字标题及四要点摘录用于回归（其他页明确模拟），另测100字要点，全文进入原生PPTX。2项针对性单元、1组浏览器1200/480px预览及长标题编辑、严格打包校验通过。没有重跑全量浏览器或PowerPoint检查，没有新Anna调用。保留结构和异常响应体积保护；实际空间不足仍明确提示，不删内容。已上传开发测试版0.1.12（ID693，rev14）。
+
+2026-11-20后续D1.6：旧响应将导师与新员工合写，已补Prompt要求一条一个角色，标题与角色数量对应，原始真实响应保留。模拟修正输出的四个独立区域及原生PPTX全文核对通过；本次仅运行D1.1/D1.2/D1.6共3项针对性测试及严格打包校验，均通过，不重复全量浏览器/PowerPoint测试。已上传0.1.11（ID692，rev13），用户自行安装并验证真实Anna行为。新增调用0次、0 CU。以下保留此前本地完整回归。
+
+数据来源：[导师制失败诊断原文](../test/fixtures/mentor-real-diagnostic.json)为用户提供的完整真实响应；1–6条长中文和更多短要点来自明确标注的[模拟边界数据](../test/density-fixtures.mjs)。回放中的0.36 CU是历史回执，不代表新增调用。本轮真实调用0次、消耗0 CU，不上传staging。
+
+最终结果：**27项单元、34组浏览器、Anna本地严格包校验通过**。[浏览器执行记录](evidence/density/08-browser-final.tap)。每个正文布局除容量检查外，还校验完整索引集合，缺少任何要点时回退或明确停止，禁止仅呈现前三条。
+
+| 用例 | 验收要求 | 验证记录（保留失败） |
+| --- | --- | --- |
+| D1.1 | 原失败JSON成功呈现6页；四阶段逐条保留、顺序正确；异常design回退。 | **修复前不通过。** 完整响应endTurn，输出566/1800 tokens，却因正文固定最多三条拒绝第4页。原始错误及截图保留。**修复后通过。** 解析/浏览器均核对四个原文及索引，几何合法但倒序的模拟design也按原顺序回退。<details><summary>修复前与修复后截图</summary><img src="evidence/density/00-before-mentor-failed.png" width="400" alt="修复前四条要点导致整稿失败"><img src="evidence/density/01-mentor-stages.png" width="500" alt="修复后完整四阶段按顺序显示"></details> |
+| D1.2 | 1–6条56字要点、多于六条短要点，预览及PPTX不删、不截、不覆盖。 | **通过。** 单元逐条核对1–6条及7/8/10/12条短要点；浏览器1200/480px验证1–6条长中文及12条短文；所有要点恰有一个编辑区域。原生XML核对全文，存储恢复无删项。不同密度采用分栏、顺序列表及主次布局。<details><summary>长中文密度截图</summary><img src="evidence/density/02-1-long-points.png" width="440"><img src="evidence/density/02-2-long-points.png" width="440"><img src="evidence/density/02-3-long-points.png" width="440"><img src="evidence/density/02-4-long-points.png" width="440"><img src="evidence/density/02-5-long-points.png" width="440"><img src="evidence/density/02-6-long-points.png" width="440"></details> |
+| D1.3 | 类型、单条长度、单页/整份预算、原始响应体积及排版容量拦截，保留原文。 | **通过。** 空数组/null/空字符串/57字、超单页预算、整份预算及100000字符响应上限分别验证。8条56字超实际可读容量时明确拒绝；8条短文编辑成排不下的长文时输入保留，切页被阻止，旧存稿不变，Esc可取消。未做自动拆页。<details><summary>编辑容量保护</summary><img src="evidence/density/04-edit-not-saved.png" width="500" alt="排不下时输入保留并提示未保存"></details> |
+| D1.4 | 编辑后P2切换/撤销/恢复、保存重开、历史及图片兼容。 | **通过。** 四阶段页编辑第三条后切分栏、列表、撤销和恢复，再保存刷新重开，四条全文和布局均保留。回归既有图片和指标失效测试。组件结构或字段顺序变化时重建DOM，不按旧索引提交。<details><summary>重开后的分栏布局</summary><img src="evidence/density/03-restored-grid.png" width="500" alt="保存重开保留四阶段及编辑内容"></details> |
+| D1.5 | 原生PPTX与预览共用布局，文字图形仍可编辑，0新增CU。 | **首次PowerPoint检查不通过。** 导师制第3页一个旧设计文本框宽327.78pt，文字宽336pt；[失败测量](evidence/density/07a-native-first-failed-results.json)保留。改为安全显示换行后**复测通过**：两份导出共13页、100个非空文本框无溢出，实际修改文字和移动形状成功，源文件不被改写。四阶段原文在PowerPoint再次逐条核对。[最终测量](evidence/density/07-native-final-results.json)。<details><summary>PowerPoint检查截图（首次阶段页及最终结果）</summary><img src="evidence/density/05a-native-first-check.png" width="500" alt="首次PowerPoint检查时的阶段页；角色页溢出详见失败测量报告"><img src="evidence/density/05-native-mentor.png" width="500" alt="PowerPoint四阶段原生对象"><img src="evidence/density/06-native-six-points.png" width="500" alt="PowerPoint六条长中文完整呈现"></details> |
+
+自动化入口：`npm test`、`npm run test:browser`；本机PowerPoint复核：`scripts/check-density-native.ps1`。可检查导师制回放PPTX（本地生成物 `release/density/mentor-real-replay.pptx`，不随Git分发）与1–6条长文边界PPTX（本地生成物 `release/density/density-boundaries.pptx`，不随Git分发）。容量检测基于保守文字测量，不声称任意数量/任意长文都能排下；放不下时完整保留原始响应，保持用户页数，不自动删内容。
+
+[资料输入](#m1-资料输入与设置) · [逐页设计](#m5-逐页设计) · [历史稿件](#m6-我的-ppt) · [P1.1](#p11-真实生成质量修复) · [P1.2](#p12-指标可视化泛化) · [P2更换布局](#p2-本地更换布局) · [V1数据关系](#v1-主指标与数据关系) · [跨页采用](#v16-跨正文页采用与叙事保护) · [验收输入](#验收输入与操作步骤)
 
 ## M1 资料输入与设置
 
@@ -113,6 +275,45 @@
 已知限制：仅支持指标页和总结页；重点指标要求原页面已有可靠主证据。撤销历史仅存在于当前打开会话；恢复原布局可在重开后使用。图片沿用原位置，不自动避让正文。未新增真实Anna调用或重新生成整份PPT。
 
 
+
+## V1 主指标与数据关系
+
+对应[SPEC V1](../SPEC.md#v1-主指标与数据关系本地候选)。以下为本地候选验收，完成时未上传或发布。随后用户授权上传开发测试版，版本与状态见DELIVERY；真实Anna生成仍待用户实测。本地验收真实Anna调用0次，新增0 CU。
+
+数据来源：客服文案沿用已保存真实响应；迁移文案沿用用户确认且已与PPTX核对的摘录。所有新metric字段均为测试中显式补充的模拟标注，不能视为Anna已经成功返回新协议。边界例和长文例为合成测试数据。原始正文未被替换为“理想答案”。
+
+| 规格 | 验收条件 | 结果与截图 |
+| --- | --- | --- |
+| V1.1 可选协议及来源 | 三种kind，保持points；片段引用、标签、单位、数量、有限值和快照核对。缺失或非法字段回退，原设计与旧稿保留。 | **通过。** 负数、不同单位、非数值、部分数字引用、重复使用同一来源、错误rate与过期快照均覆盖。rate按原文精度舍入核对，包含12.35%→12.4%的边界。原有P1/P2回归保留。<details><summary>不同单位的安全回退</summary><img src="evidence/v1/03-mixed-unit.png" width="360" alt="不同单位不绘制关系图，原文保留"><br><img src="evidence/v1/04-native-mixed-unit.png" width="360" alt="不同单位回退的原生导出"></details> |
+| V1.2 前后比较 | 18→11、8→2，同一尺度，单位及辅助证据保留；零基线不算相对变化，零值不伪造可见条长。 | **通过。** 对比条宽度比与数值比一致；分别显示约39%、75%；基线0展示明确说明，不输出NaN/Infinity。<details><summary>浏览器比较与零基线</summary><img src="evidence/v1/01-customer.png" width="360" alt="客服前后比较和辅助依据"><br><img src="evidence/v1/01-retrieval.png" width="360" alt="迁移检索时间比较，原文保留完成量及总量"><br><img src="evidence/v1/03-zero.png" width="360" alt="零基线没有相对变化率"></details><details><summary>原生比较导出</summary><img src="evidence/v1/04-native-customer.png" width="360" alt="PowerPoint客服比较条"><br><img src="evidence/v1/04-native-retrieval.png" width="360" alt="PowerPoint迁移检索比较"><br><img src="evidence/v1/04-native-zero.png" width="360" alt="PowerPoint零基线"></details> |
+| V1.3 完成进度 | 9,600/12,000份对应80%；零总量回退，超额保留真实完成率，轨道最多填满；单一百分比不自动变成进度。 | **通过。** 15/12份显示125%、超出3份。错误完成率即使出现在来源中也不绘图。single的80%仅显示大数字，不绘进度。<details><summary>完成关系与边界</summary><img src="evidence/v1/01-completion.png" width="360" alt="完成量总量、80%和进度轨道"><br><img src="evidence/v1/03-over.png" width="360" alt="超额125%与超出量"><br><img src="evidence/v1/03-zero-total.png" width="360" alt="总量零回退原文"></details><details><summary>原生进度导出</summary><img src="evidence/v1/04-native-completion.png" width="360" alt="PowerPoint完成进度"><br><img src="evidence/v1/04-native-over.png" width="360" alt="PowerPoint超额进度"><br><img src="evidence/v1/04-native-zero-total.png" width="360" alt="PowerPoint零总量回退"></details> |
+| V1.4 编辑、P2与存储 | 取消或无关编辑不失效；来源变动后删除metric并持久标记失效，安全文字显示，撤销不能复活旧数据。组件数变化重建，点击下一要点仍能进入正确编辑框，图片保留且可移动。 | **通过。** 9,600改为9,000后旧80%组件与剩余2,400均消失，显示明确提示；标题/辅助要点编辑不影响有效图。相关编辑保存后刷新重开保持失效。有效图支持关系/并列/简洁切换及撤销、恢复，points和源快照保持一致。<details><summary>失效后的预览与原生导出</summary><img src="evidence/v1/02-source-invalidated.png" width="360" alt="编辑后停用数据图、保留新文案及图片"><br><img src="evidence/v1/04-native-edited-invalidated.png" width="360" alt="原生导出保留9,000及独立图片，没有旧计算结果"></details> |
+| V1.5 宽窄屏与可编辑导出 | 1200/480px；56字主点及两条56字辅证；预览与PPTX共用几何；原生文字和矩形可独立编辑。 | **通过。** 22项单元、28组浏览器、Anna严格打包校验通过。9份浏览器实际下载文件共52页、344个文本框无宽高溢出；前8份已实际修改并恢复文本与形状位置，第9份专项检查长文边界；另逐一修改并恢复客服/检索/完成三份文件的主数值和实际填充矩形，全部成功。数字、单位、原文、比例通过布局/PPTX XML与浏览器核对；无整页图片化。<details><summary>长文边界</summary><img src="evidence/v1/05-long-source.png" width="360" alt="浏览器56字主证据及两条56字辅证"><br><img src="evidence/v1/06-native-long-2.png" width="360" alt="PowerPoint客服长文比较"><br><img src="evidence/v1/06-native-long-3.png" width="360" alt="PowerPoint迁移长文比较"><br><img src="evidence/v1/06-native-long-4.png" width="360" alt="PowerPoint长文完成关系"></details> |
+
+边界与剩余验证：数值引用只能证明组件与页面原文一致，不能自动证明原文业务事实或关系声明正确。上一轮仅metrics页启用，已由V1.6取消硬限制；旧稿仍不自动生成metric。相关要点修改后停止图形，不自动同步数值；原有标题和其他页不被改写，因此提示用户核对相关文案。在PowerPoint中原生文字/形状可独立编辑，但手动修改导出后的数字不会联动计算条长。真实Anna遵循新字段、角色关系与1800 token预算的稳定性尚未测试，需用户确认后另行安排一次受控生成。
+
+
+
+## V1.6 跨正文页采用与叙事保护
+
+定位到限制在四层：Prompt仅允许metrics、parseDeck按页型过滤、resolveMetric拒绝非metrics且要求与lead重合、P2只列指标/总结。现已允许任意正文提供可选metric，先做原有来源/单位/关系校验，再按现有文本区域空间决定采用。没有合适数据或空间时保留原布局，不强行补指标。
+
+目标对比增加可选basis:"target"，values按[当前,目标]，来源必须明确有“目标”；旧comparison默认前后关系保持不变。非指标主视觉只在来源区域附加小图，原有其他文字字号、坐标、底色及design保持。必要的显示换行不改原文或字号。来源修改仍停用指标，非指标页保留原叙事，不能通过撤销复活旧图。
+
+| 规格/场景 | 验收条件 | 结果与证据 |
+| --- | --- | --- |
+| V1.6 指标页 | 18→11分钟、约39%，保持原主指标能力。 | **通过。** <details><summary>指标页预览与原生导出</summary><img src="evidence/v1-cross/01-metrics.png" width="360" alt="指标页保留前后比较"><br><img src="evidence/v1-cross/02-native-metrics.png" width="360" alt="原生指标比较"></details> |
+| V1.6 进展页 | 9,600/12,000份、80%，保留完整性校验99.2%/99.5%与36名试用者，原章节不被改为指标页。 | **通过；保留桌面失败记录。** 首次原生检查发现未改动的辅证段落有约9.6pt标点悬挂越界，记为不通过；第一次仅按长文阈值换行未覆盖43字段落，复测仍不通过。改为按实际区域宽度控制显示换行，保持原字号、坐标和原文后通过。<details><summary>失败及最终复测</summary><img src="evidence/v1-cross/03a-failed-progress.png" width="360" alt="首次原生辅证宽度越界"><br><img src="evidence/v1-cross/03b-failed-progress.png" width="360" alt="43字未触发旧长文阈值的复测失败"><br><img src="evidence/v1-cross/01-progress.png" width="360" alt="进展原布局内加入完成进度"><br><img src="evidence/v1-cross/02-native-progress.png" width="360" alt="保持字号与坐标后的原生复测通过"></details> |
+| V1.7 风险目标 | 当前92%与目标95%，差3个百分点；保留“暂不全面推广”的主要风险结论及字号位置，不能显示时间改善。 | **通过。** <details><summary>风险页原叙事优先</summary><img src="evidence/v1-cross/01-risk.png" width="360" alt="目标差距辅助图不覆盖主风险"><br><img src="evidence/v1-cross/02-native-risk.png" width="360" alt="PowerPoint当前目标对比"></details> |
+| V1.6 总结与决策 | 总结可在兼容卡片中呈现100%核心数值；决策lead与metric.point可不同，效果比较不能覆盖当前建议。 | **通过。** 决策以已有18→11分钟事实构造辅证例，未把时间数据改成成本事实。<details><summary>总结/决策兼容组件</summary><img src="evidence/v1-cross/01-summary.png" width="360" alt="总结页核心数值辅助"><br><img src="evidence/v1-cross/02-native-summary.png" width="360" alt="原生总结数值"><br><img src="evidence/v1-cross/01-decision.png" width="360" alt="决策原建议保留，响应效果作为辅助"><br><img src="evidence/v1-cross/02-native-decision.png" width="360" alt="原生决策与效果比较"></details> |
+| V1.6 无数字/不适合 | 无数字正文不生成图；已有milestone里的阶段序号即使有数字也不替换为指标对比；狭小设计区合法metric仍保留但不采用。 | **通过。** <details><summary>不强行可视化</summary><img src="evidence/v1-cross/01-ordinary.png" width="360" alt="无数字页面保持文字布局"><br><img src="evidence/v1-cross/02-native-ordinary.png" width="360" alt="原生无数字页"><br><img src="evidence/v1-cross/01-ordinal.png" width="360" alt="阶段数字保留里程碑，不强行比较"><br><img src="evidence/v1-cross/02-native-ordinal.png" width="360" alt="原生阶段布局"></details> |
+| V1.6–V1.7 P2/编辑/导出 | 仅兼容页面提供辅助图与原有叙事两项，切换撤销恢复不改原文；来源编辑后停用图但保留主风险；宽窄预览和原生文件一致。 | **通过。** 24项单元、30组浏览器、Anna严格校验通过。7份实际下载的6页文件共42页262个文本框最终无宽高溢出，原生文字及矩形可编辑。本轮真实模型调用0次、CU为0，未上传/发布。 |
+
+测试过程记录：新单元首轮23/24通过，先后修正三类测试假设：既有决策组件把“当前建议”作为独立标题；单值并不必然有条形；显示换行允许变化但字号、几何和原文必须一致。没有以放宽来源、数值或关系校验通过测试。最终断言同时检查原始points、叙事样式、目标标签、条长比例及原生导出。
+
+剩余范围：不主动重排整页给图表腾位置；过窄/过矮区域、超长轴标签、来源块已有compare或milestone时不附加新组件。其他旧P2布局能力不因新字段缺失而改变。新字段仍是本地模拟标注，真实Anna遵循basis及跨页选择尚未验证。
+
+
 ## 验收输入与操作步骤
 
 以下保留各轮固定输入和原操作步骤。历史版本号用于追溯；复测请使用交付记录中的候选版本。真实生成需另行安排，本地模拟与示例操作不消耗额度。
@@ -169,3 +370,11 @@
 2. 载入示例。修改封面标题为「客服试点发布验收」，再打开「我的 PPT」并点「保存当前 PPT」，等状态显示已保存。
 3. 在「我的 PPT」选择「新建空白」，核对画布恢复为空。关闭并重新打开 App，从列表打开「客服试点发布验收」，核对 6 页和封面标题仍在。
 4. 下载 PPTX，核对 6 页和已编辑标题。再删除这份验收用稿并重新打开 App，确认历史项消失。全程使用示例及稿件操作，模型调用数为 0。
+
+### P2.5紧急最小修复：请求与校验契约
+
+真实risk五要点返回stack+lead:0，触发仅metrics/decision允许数值lead的条件；即使删lead，固定stack行距也无法排下五条。根因是Prompt通用示例与当前页接受组合不一致。已改为请求前复用parseRedesignResponse过滤兼容组合（含语义/空间/完整性/相同视觉），不放宽校验。7项P2.5单元、2组浏览器有效/无效/相同候选、取消、撤销、历史、图片和导出回归通过。[真实失败日志](../test/fixtures/p25-stack-failed-diagnostic.json)。第二次网格错误无原始响应，现有Prompt网格协议与校验未发现同类矛盾，不猜测修改。此次未调用Anna、未上传staging，线上仍为旧版。
+
+### P2.5真实网格失败复现：高度不足（暂停付费测试）
+
+现有parseSlideDesign直接验证返回undefined。首个失败为数组第2块、point=1、text、w=6/h=4，违反minHeight=5；后续另有h=4/3/3。所有坐标及外边界本身未越界。Prompt明确12×12、text/focus最小4×5，与校验一致；模型所选三层布局最少需要15行，无法塞入12行，不能通过压小高度实现。本轮不改Prompt、网格安全规则或架构，不对该版式硬编码。新增mock回归：原数组拒绝且原稿不变，合规五要点网格可通过，P2.5共8项测试通过。仅修改测试与记录，0真实调用、未上传；付费实测继续暂停。

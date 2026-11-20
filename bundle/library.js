@@ -95,7 +95,7 @@ export function snapshotDraft(id, deck, style) {
     } : {})
   }));
   return structuredClone({
-    id, deck: { slides }, style, updatedAt: Date.now(),
+    id, deck: { slides, ...(deck.generationTrace ? { generationTrace: deck.generationTrace } : {}) }, style, updatedAt: Date.now(),
     title: slides[0].title, pageCount: slides.length
   });
 }

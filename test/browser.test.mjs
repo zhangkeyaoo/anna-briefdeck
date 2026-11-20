@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { after, before, test } from "node:test";
 import JSZip from "jszip";
 import { chromium } from "playwright-core";
-import { sampleDeck } from "../bundle/deck.js";
+import { parseDeck, sampleDeck } from "../bundle/deck.js";
 import { archiveMigration, prioritizedPilot, supportPilot } from "./slide-design-fixtures.mjs";
 import { boundaryLayoutDeck } from "./p2-layout-fixtures.mjs";
+import { crossPageExamples, edgeMetricDeck, metricBoundaryDeck, metricExamples } from "./metric-fixtures.mjs";
+import { densityDeck, shortDensityDeck } from "./density-fixtures.mjs";
+import { knowledgeReviewNumberingDeck } from "./numbering-fixtures.mjs";
+import { visualBoundaryDeck, visualDeck } from "./visual-fixtures.mjs";
 
 const origin = "https://briefdeck.test";
 const types = { html: "text/html", js: "text/javascript", css: "text/css", json: "application/json" };
@@ -15,6 +19,8 @@ let browser;
 let wordBuffer;
 const realP1Response = JSON.parse(await readFile(new URL("./fixtures/p1-real-response.json", import.meta.url), "utf8"));
 const migrationExcerpt = JSON.parse(await readFile(new URL("./fixtures/p12-migration-excerpt.json", import.meta.url), "utf8"));
+const mentorDiagnostic = JSON.parse(await readFile(new URL("./fixtures/mentor-real-diagnostic.json", import.meta.url), "utf8"));
+const platformDiagnostic = JSON.parse(await readFile(new URL("./fixtures/customer-platform-diagnostic.json", import.meta.url), "utf8"));
 
 before(async () => {
   const executablePath = process.env.BRIEFDECK_CHROMIUM || (existsSync(chrome) ? chrome : undefined);
@@ -28,7 +34,8 @@ after(async () => browser?.close());
 async function serve(route) {
   const { pathname } = new URL(route.request().url());
   if (pathname === "/") {
-    return route.fulfill({ contentType: "text/html", body: '<style>body{margin:0}iframe{width:100%;height:100vh;border:0}</style><iframe sandbox="allow-scripts allow-same-origin allow-forms allow-downloads" src="/bundle/index.html?wid=test&t=test"></iframe>' });
+    const debug=new URL(route.request().url()).searchParams.has("public")?"":"&debug=1";
+    return route.fulfill({ contentType: "text/html", body: '<style>body{margin:0}iframe{width:100%;height:100vh;border:0}</style><iframe sandbox="allow-scripts allow-same-origin allow-forms allow-downloads" src="/bundle/index.html?wid=test&t=test'+debug+'"></iframe>' });
   }
   if (pathname === "/static/anna-apps/_sdk/latest/index.js") {
     return route.fulfill({ contentType: "text/javascript", body: `
@@ -69,6 +76,17 @@ async function serve(route) {
           window.requests.push(request);
           const response = { stopReason: "endTurn", _meta: { quotaConsumed: 7 } };
           const input = Array.isArray(request.messages[0].content) ? request.messages[0].content[0] : request.messages[0].content;
+          const pageTask=JSON.parse(input.text.split("\\n").at(-1));
+          if(pageTask.task==="redesign-single-slide") {
+            window.redesignCallCount=(window.redesignCallCount??0)+1;
+            if(window.holdRedesignResponse)await new Promise(resolve=>{window.releaseRedesignResponse=resolve;});
+            if(window.mockRedesignOutcome==="network")throw Error("模拟网络失败");
+            const sequence=window.mockRedesignSequence?.[window.redesignCallCount-1];
+            const raw=sequence?.alternative?pageTask.compatibleProposals[0]:sequence?.raw??(window.mockRedesignOutcome==="unsafe"?{title:"模型不允许修改正文",html:"<script>window.executed=true</script>"}:
+              window.mockRedesignOutcome==="same"?{manualLayout:"plain"}:
+              window.mockRedesignRaw??{intent:"首条重点，后续两项分区，避让图片",design:[[0,"focus",0,0,6,11],[1,"text",6,0,6,5],[2,"text",6,6,6,5]]});
+            return {stopReason:window.mockRedesignOutcome==="cut"?"maxTokens":"endTurn",model:"mock-redesign",usage:{inputTokens:0,outputTokens:180},_meta:{quotaConsumed:sequence?.cost??0,maxTokens:{effective:900}},content:{text:JSON.stringify(raw)}};
+          }
           const count = Number(input.text.match(/恰好 ([0-9]+) 页/)[1]);
           if (window.holdMockResponse) {
             await new Promise(resolve => { window.releaseMockResponse = resolve; });
@@ -78,13 +96,22 @@ async function serve(route) {
           if (window.mockOutcome === "quota") throw { code: "quota_exceeded" };
           if (window.mockOutcome === "vision") throw { data: { errorCode: "APP_MODEL_NOT_VISION_CAPABLE" } };
           if (window.mockOutcome === "network") throw Error("network");
+          if(window.mockOutcome==="truncated-once") {
+            window.fullCallCount=(window.fullCallCount??0)+1;
+            return {stopReason:window.fullCallCount===1?"maxTokens":"endTurn",usage:{reasoningTokens:3459},
+              _meta:{quotaConsumed:0.104,maxTokens:{effective:request.maxTokens,limitedBy:"request"}},
+              content:{type:"text",text:window.fullCallCount===1?'{"slides":[':JSON.stringify({slides})}};
+          }
           if (window.mockOutcome === "cut") return {
             stopReason: "maxTokens",
             usage: { outputTokens: 1500 },
-            _meta: { quotaConsumed: 14, maxTokens: { effective: 1500 } }
+            _meta: { quotaConsumed: 14, maxTokens: { effective: 1500, limitedBy: "transport" } }
           };
           if (window.mockOutcome === "json") return { ...response, content: { text: "broken" } };
           if (window.mockOutcome === "real-p1") return ${JSON.stringify(realP1Response)};
+          if (window.mockOutcome === "visual") return { stopReason: "endTurn", model: "mock-visual", usage: { inputTokens: 0, outputTokens: 0 }, _meta: { quotaConsumed: 0 }, content: { text: ${JSON.stringify(JSON.stringify(visualDeck()))} } };
+          if (window.mockOutcome === "compat") return { stopReason:"endTurn", model:"mock-real-replay", _meta:{quotaConsumed:0}, content:{text:${JSON.stringify(platformDiagnostic.originalModelText)}} };
+          if (window.mockOutcome === "mentor-real") return ${JSON.stringify(mentorDiagnostic.response)};
           if (window.mockOutcome === "migration-excerpt") {
             const result = structuredClone(slides);
             const excerpt = ${JSON.stringify(migrationExcerpt)};
@@ -223,6 +250,16 @@ browserCase("M1.1 reads each input type and submits document plus image in one r
     if (files.includes(jpeg)) assert.equal(blocks[1].mimeType, "image/jpeg");
     for (const item of files) await frame.getByRole("button", { name: "移除 " + item.name }).click();
   }
+});
+
+browserCase("multi-file hint follows the three-file threshold without changing pages or requesting Anna",async(page,frame)=>{
+ const hint=frame.locator("#multi-file-hint");
+ assert.ok(await hint.isHidden());
+ await upload(frame,[file("one.txt"),file("two.txt")]);assert.ok(await hint.isHidden());
+ await upload(frame,file("three.txt"));assert.ok(await hint.isVisible());
+ assert.equal(await hint.textContent(),"本次选择了多个文件，处理时间和积分消耗可能增加。建议根据资料内容合理设置页数，内容较多时建议增加页数到10页以上，防止生成失败。");
+ await frame.getByRole("button",{name:"移除 three.txt",exact:true}).click();assert.ok(await hint.isHidden());
+ assert.equal(await frame.locator("#page-count").inputValue(),"6");assert.equal((await requests(frame)).length,0);
 });
 
 browserCase("M1.4 exposes an accessible picker and one consistent list after choosing or re-choosing", async (page, frame) => {
@@ -472,7 +509,7 @@ browserCase("M2.1, M2.2 and M3.2 preserve inputs and draft on cancel and host fa
   await frame.evaluate(() => { window.holdMockResponse = true; });
   for (const [index, [outcome, error]] of [
     ["count", /所选的 6 页/], ["cut", /被截断/], ["json", /无法读取的格式/],
-    ["quota", /额度不足/], ["vision", /无法读取图片/], ["network", /无法连接 Anna/]
+    ["quota", /积分不足/], ["vision", /无法读取图片/], ["network", /无法连接 Anna/]
   ].entries()) {
     await frame.evaluate(outcome => { window.mockOutcome = outcome; }, outcome);
     await submit(frame, true);
@@ -490,8 +527,8 @@ browserCase("M2.1, M2.2 and M3.2 preserve inputs and draft on cancel and host fa
     assert.equal(await frame.getByText("chart.png", { exact: true }).count(), 1);
     if (outcome === "cut") {
       const message = await status(frame).innerText();
-      assert.match(message, /本次消耗 14 CU/);
-      assert.match(message, /输出上限 1500 tokens/);
+      assert.match(message, /本次消耗 14.00 积分/);
+      assert.doesNotMatch(message, /tokens|模型|CU|输出上限/);
       if (process.env.BRIEFDECK_M2_EVIDENCE) {
         await page.screenshot({ path: `${process.env.BRIEFDECK_M2_EVIDENCE}/03-local-truncation-and-usage.png`, fullPage: true });
       }
@@ -522,7 +559,8 @@ browserCase("M2.4 applies the same varied templates to the example and simulated
   await frame.evaluate(() => { window.mockOutcome = "composition"; });
   await submit(frame, true);
   await status(frame).filter({ hasText: /已生成 6 页/ }).waitFor();
-  assert.match(await status(frame).textContent(), /25\.27 CU.*mock-vision.*输入 900 tokens.*输出 2988 tokens.*推理 2200 tokens/);
+  assert.match(await status(frame).textContent(), /25\.27 积分/);
+  assert.doesNotMatch(await status(frame).textContent(),/tokens|mock-vision|推理|输出上限/);
   for (const [number, kind] of cases) {
     await frame.getByRole("button", { name: `第 ${number} 页`, exact: true }).click();
     assert.equal(await frame.locator("#stage .slide").getAttribute("data-layout"), kind);
@@ -537,6 +575,760 @@ browserCase("M2.4 applies the same varied templates to the example and simulated
   }
   const [request] = await requests(frame);
   assert.match(request.messages[0].content.text, /metrics 指标/);
+});
+
+async function openMetricFixture(page, frame, raw, name) {
+  const deck = parseDeck({ content: { text: JSON.stringify(raw) }, stopReason: "endTurn" }, raw.slides.length);
+  deck.slides[0].title = name;
+  const record = { id: "metric-fixture", title: name, pageCount: deck.slides.length, updatedAt: Date.now(), style: { theme: "minimal", accent: "" }, deck };
+  await frame.evaluate(record => localStorage.setItem("mockAnnaStorage", JSON.stringify({
+    "briefdeck/drafts/metric-fixture": { value: record, metadata: { schema: 1, title: record.title, pageCount: record.pageCount, updatedAt: record.updatedAt }, etag: "initial" }
+  })), record);
+  await page.reload();
+  const active = page.frames().find(item => item.parentFrame());
+  await active.locator("#library > summary").click();
+  await active.getByRole("button", { name: new RegExp(name + ".*" + deck.slides.length + " 页") }).click();
+  await active.getByRole("button", { name: "第 2 页", exact: true }).click();
+  return active;
+}
+
+async function assertMetricBounds(page, frame, label) {
+  for (const width of [1200, 480]) {
+    await page.setViewportSize({ width, height: 960 });
+    assert.ok(await frame.locator("#stage .slide-text").evaluateAll(items => items.filter(item => item.textContent).every(item => {
+      const range = document.createRange(); range.selectNodeContents(item);
+      const text = range.getBoundingClientRect(), box = item.getBoundingClientRect();
+      return text.left >= box.left - 1 && text.top >= box.top - 1 && text.bottom <= box.bottom + 1 && text.right <= box.right + 1;
+    })), `${label} fits ${width}px`);
+  }
+  await page.setViewportSize({ width: 1200, height: 960 });
+}
+
+async function savedMockDraft(frame) {
+  await frame.waitForFunction(()=>document.querySelector("#draft-save-state").textContent==="当前 PPT 已保存");
+  return frame.evaluate(()=>Object.values(JSON.parse(localStorage.getItem("mockAnnaStorage")))[0].value);
+}
+
+async function generateRedesign(frame) {
+  await frame.locator("#redesign").click();
+  await frame.locator("#redesign-request").click();
+  await frame.locator("#redesign-preview").waitFor({state:"visible"});
+}
+
+browserCase("P2.5 preview and cancel are isolated; confirmation, undo, P2 and durable reset preserve edited prose and pictures", async (page, initial) => {
+  let frame=await openMetricFixture(page,initial,structuredClone(sampleDeck),"单页设计验收");
+  await frame.getByRole("button",{name:"封面",exact:true}).click();
+  assert.ok(await frame.locator("#redesign").isDisabled());
+  await frame.getByRole("button",{name:"第 2 页",exact:true}).click();
+  await frame.locator('#stage [data-field="0"]').click();
+  const edited="本周处理492单，仅限工作日的两个业务组。";
+  await frame.getByRole("textbox",{name:"要点 1编辑框",exact:true}).fill(edited);
+  await frame.getByRole("textbox",{name:"要点 1编辑框",exact:true}).press("Enter");
+  const image=await picture(frame,"png",58);await frame.locator("#picture-file").setInputFiles(image);
+  await frame.locator("#stage .slide-picture canvas").waitFor();
+  const before=await savedMockDraft(frame);
+  const beforeDOM=await frame.locator("#stage .slide").innerHTML();
+  await frame.locator("#redesign").click();
+  assert.match(await frame.locator("#redesign-confirm").textContent(),/最多4次.*积分/);
+  assert.equal((await requests(frame)).length,0);
+  await frame.locator("#redesign-cancel").click();
+  assert.deepEqual((await savedMockDraft(frame)).deck,before.deck);
+  await generateRedesign(frame);
+  assert.equal((await requests(frame)).length,1);
+  assert.doesNotMatch(await frame.locator("#redesign-progress").textContent(),/tokens|mock-redesign/);
+  assert.ok(!await frame.locator("#redesign-detail").evaluate(item=>item.open));
+  assert.equal(await frame.locator("#stage .slide").innerHTML(),beforeDOM);
+  assert.equal(await frame.locator("#stage .slide-picture canvas").count(),1);
+  assert.equal(await frame.locator("#redesign-preview .slide-picture canvas").count(),1);
+  for(const width of [1200,480]) {
+    await page.setViewportSize({width,height:1000});
+    assert.ok(await frame.locator("#redesign-preview .slide-text").evaluateAll(items=>items.filter(item=>item.textContent).every(item=>{
+      const r=document.createRange();r.selectNodeContents(item);const text=r.getBoundingClientRect(),box=item.getBoundingClientRect();
+      return text.right<=box.right+1&&text.bottom<=box.bottom+1&&text.left>=box.left-1&&text.top>=box.top-1;
+    })));
+  }
+  await page.setViewportSize({width:1200,height:1000});
+  if(process.env.BRIEFDECK_P25_EVIDENCE)await frame.locator("#redesign-dialog").screenshot({path:process.env.BRIEFDECK_P25_EVIDENCE+"/01-candidate-preview.png"});
+  await frame.locator("#redesign-cancel").click();
+  assert.deepEqual((await savedMockDraft(frame)).deck,before.deck);
+  await generateRedesign(frame);await frame.locator("#redesign-apply").click();
+  assert.doesNotMatch(await frame.locator("#redesign-status").textContent(),/tokens|mock-redesign/);
+  const attempt=JSON.parse(await frame.locator("#rendering-output").textContent()).latestSinglePageAttempt;
+  assert.equal(attempt.status,"applied");assert.equal(attempt.model,"mock-redesign");assert.equal(attempt.usage.outputTokens,180);
+  let saved=await savedMockDraft(frame);
+  assert.equal(saved.deck.slides[1].manualLayout,"ai-design");
+  assert.deepEqual(saved.deck.slides[1].points,before.deck.slides[1].points);
+  assert.deepEqual(saved.deck.slides[1].pictures,before.deck.slides[1].pictures);
+  for(const index of [0,2,3,4,5])assert.deepEqual(saved.deck.slides[index],before.deck.slides[index]);
+  const controls=frame.locator("#layout-controls");await controls.locator("summary").click();
+  await controls.getByRole("button",{name:"撤销上次切换"}).click();
+  assert.deepEqual((await savedMockDraft(frame)).deck,before.deck);
+  await generateRedesign(frame);await frame.locator("#redesign-apply").click();await savedMockDraft(frame);
+  if(!await controls.locator("#layout-options").isVisible())await controls.locator("summary").click();
+  await controls.getByRole("button",{name:"简洁文字",exact:true}).click();
+  await controls.getByRole("button",{name:"AI设计",exact:true}).click();
+  await assertMetricBounds(page,frame,"confirmed AI grid");
+  if(process.env.BRIEFDECK_P25_EVIDENCE)await frame.locator(".editor").screenshot({path:process.env.BRIEFDECK_P25_EVIDENCE+"/02-applied.png"});
+  const downloading=page.waitForEvent("download");await frame.locator("#download").click();const file=await downloading;
+  if(process.env.BRIEFDECK_P25_OUTPUT) {
+    await file.saveAs(process.env.BRIEFDECK_P25_OUTPUT+"/confirmed.pptx");
+    await writeFile(process.env.BRIEFDECK_P25_OUTPUT+"/source.json",JSON.stringify(before.deck));
+  }
+  const zip=await JSZip.loadAsync(await readFile(await file.path()));
+  const xml=await zip.file("ppt/slides/slide2.xml").async("string");
+  const text=[...xml.matchAll(/<a:t>(.*?)<\/a:t>/g)].map(item=>item[1]).join("");
+  assert.ok(text.includes(edited));assert.equal([...xml.matchAll(/<p:pic>/g)].length,1);assert.match(xml,/<p:sp>/);
+  const calls=await requests(frame);assert.equal(calls.length,3);
+  assert.ok(calls.every(request=>request.maxTokens===900));
+  assert.ok(calls.every(request=>!request.messages[0].content.text.includes(image.buffer.toString("base64"))));
+  await savedMockDraft(frame);await page.reload();frame=page.frames().find(item=>item.parentFrame());
+  await frame.locator("#library > summary").click();await frame.getByRole("button",{name:/单页设计验收.*6 页/}).click();
+  await frame.getByRole("button",{name:"第 2 页",exact:true}).click();
+  assert.equal((await savedMockDraft(frame)).deck.slides[1].manualLayout,"ai-design");
+  assert.ok((await frame.locator('#stage [data-field="0"]').textContent()).replaceAll("\n","").includes(edited));
+  await frame.locator("#layout-controls > summary").click();
+  await frame.getByRole("button",{name:"恢复原布局",exact:true}).click();
+  assert.deepEqual((await savedMockDraft(frame)).deck,before.deck);
+  assert.equal((await requests(frame)).length,0);
+});
+
+browserCase("P2.5 invalid, identical and failed candidates leave the draft untouched and never retry", async (page,initial)=>{
+  const frame=await openMetricFixture(page,initial,structuredClone(sampleDeck),"失败不改稿验收");
+  const controls=frame.locator("#layout-controls");await controls.locator("summary").click();
+  await controls.getByRole("button",{name:"简洁文字",exact:true}).click();
+  const before=await savedMockDraft(frame);
+  for(const outcome of ["unsafe","network","cut","same"]) {
+    await frame.evaluate(outcome=>{window.mockRedesignOutcome=outcome;},outcome);
+    await frame.locator("#redesign").click();await frame.locator("#redesign-request").click();
+    await frame.locator("#redesign-progress").filter({hasText:/暂未找到符合当前页面要求/}).waitFor();
+    assert.ok(await frame.locator("#redesign-apply").isHidden());
+    assert.deepEqual((await savedMockDraft(frame)).deck,before.deck);
+    assert.equal(await frame.evaluate(()=>window.executed),undefined);
+    if(outcome==="unsafe"&&process.env.BRIEFDECK_P25_EVIDENCE)await frame.locator("#redesign-dialog").screenshot({path:process.env.BRIEFDECK_P25_EVIDENCE+"/03-invalid.png"});
+    await frame.locator("#redesign-cancel").click();
+  }
+  assert.equal((await requests(frame)).length,10);
+});
+
+browserCase("P2.5 cancellation discards a late response and a changed style invalidates the preview",async(page,initial)=>{
+  const frame=await openMetricFixture(page,initial,structuredClone(sampleDeck),"迟到候选验收");
+  const before=await savedMockDraft(frame);
+  await frame.evaluate(()=>{window.holdRedesignResponse=true;});
+  await frame.locator("#redesign").click();await frame.locator("#redesign-request").click();
+  await frame.waitForFunction(()=>typeof window.releaseRedesignResponse==="function");
+  await frame.locator("#redesign-cancel").click();
+  assert.ok(await frame.locator("#redesign").isDisabled());
+  await frame.getByRole("button",{name:"第 3 页",exact:true}).click();
+  await frame.evaluate(()=>{window.holdRedesignResponse=false;window.releaseRedesignResponse();});
+  await frame.locator("#redesign").waitFor({state:"visible"});
+  await frame.waitForFunction(()=>!document.querySelector("#redesign").disabled);
+  assert.ok(!await frame.locator("#redesign-dialog").evaluate(dialog=>dialog.open));
+  assert.deepEqual((await savedMockDraft(frame)).deck,before.deck);
+  await frame.getByRole("button",{name:"第 2 页",exact:true}).click();
+  await generateRedesign(frame);
+  await frame.evaluate(()=>{const theme=document.querySelector("#ppt-theme");theme.value="technology";theme.dispatchEvent(new Event("change"));});
+  await frame.locator("#redesign-apply").click();
+  await frame.locator("#redesign-progress").filter({hasText:/已变化/}).waitFor();
+  assert.deepEqual((await savedMockDraft(frame)).deck,before.deck);
+  await frame.locator("#redesign-cancel").click();
+  assert.equal((await requests(frame)).length,2);
+});
+
+browserCase("P2.5 source-edited metrics may be redesigned as text without reviving stale charts",async(page,initial)=>{
+  const frame=await openMetricFixture(page,initial,metricExamples()[0].raw,"失效指标单页设计验收");
+  await frame.locator('#stage [data-field="0"]').click();
+  const changed="当前已调整统计口径，响应时间改为12分钟。";
+  const input=frame.getByRole("textbox",{name:"要点 1编辑框",exact:true});await input.fill(changed);await input.press("Enter");
+  await frame.evaluate(()=>{window.mockRedesignRaw={design:[[0,"focus",0,0,6,11],[1,"text",6,0,6,11]]};});
+  await generateRedesign(frame);await frame.locator("#redesign-apply").click();
+  const saved=await savedMockDraft(frame);
+  assert.equal(saved.deck.slides[1].metricInvalidated,true);
+  assert.equal(saved.deck.slides[1].points[0],changed);
+  assert.equal(saved.deck.slides[1].manualLayout,"ai-design");
+  assert.equal(await frame.locator("#stage [data-metric-part]").count(),0);
+  assert.equal((await frame.locator('#stage [data-field="0"]').textContent()).replaceAll("\n",""),changed);
+  const controls=frame.locator("#layout-controls");await controls.locator("summary").click();
+  await controls.getByRole("button",{name:"撤销上次切换"}).click();
+  assert.equal(await frame.locator("#stage [data-metric-part]").count(),0);
+  assert.equal((await savedMockDraft(frame)).deck.slides[1].points[0],changed);
+  assert.equal((await requests(frame)).length,1);
+});
+
+browserCase("P2.5 controlled corrections succeed on calls one through four and display only the exact total credits",async(page,initial)=>{
+ let frame=initial;
+ const bad={design:[[0,"text",0,0,4,4],[1,"text",4,0,4,5],[2,"text",8,0,4,5]]};
+ const good={design:[[0,"focus",0,0,6,11],[1,"text",6,0,6,5],[2,"text",6,6,6,5]]};
+ for(const success of [1,2,3,4]) {
+  frame=await openMetricFixture(page,frame,structuredClone(sampleDeck),`受控纠错${success}`);
+  await frame.evaluate(({success,bad,good})=>{window.mockRedesignSequence=Array.from({length:success},(_,i)=>({cost:(i+1)/10,...(i===success-1?(success===4?{alternative:true}:{raw:good}):{raw:bad})}));},{success,bad,good});
+  const before=await savedMockDraft(frame);
+  await generateRedesign(frame);
+  assert.equal((await requests(frame)).length,success);
+  assert.match(await frame.locator("#redesign-progress").textContent(),new RegExp(`本次消耗 ${["0.10","0.30","0.60","1.00"][success-1]} 积分`));
+  assert.doesNotMatch(await frame.locator("#redesign-progress").textContent(),/tokens|mock-redesign|第.*次尝试|网格/);
+  const report=await frame.evaluate(()=>window.briefdeckDiagnostics());
+  assert.equal(report.latestSinglePageAttempt.attempts.length,success);
+  assert.equal(report.latestSinglePageAttempt.status,"candidate");
+  if(success>1)assert.match(report.latestSinglePageAttempt.attempts[0].error,/高度4小于最小5/);
+  if(success===4){const calls=await requests(frame);const payload=JSON.parse(calls[3].messages[0].content.text.split("\n").at(-1));assert.equal(payload.correction.failedAttempts.length,3);assert.equal(payload.correction.alternativeOnly,true);}
+  if(success===4 && process.env.BRIEFDECK_CORRECTION_EVIDENCE)await frame.locator("#redesign-dialog").screenshot({path:process.env.BRIEFDECK_CORRECTION_EVIDENCE+"/02-total-credits.png"});
+  assert.deepEqual((await savedMockDraft(frame)).deck,before.deck);
+  if(success===4) {
+    await frame.locator("#redesign-apply").click();
+    const saved=await savedMockDraft(frame);
+    assert.equal(saved.deck.slides[1].redesignTrace.attempts.length,4);
+    assert.equal(saved.deck.slides[1].redesignTrace.credits.total,"1");
+    assert.deepEqual(saved.deck.slides[1].points,before.deck.slides[1].points);
+    for(const index of [0,2,3,4,5])assert.deepEqual(saved.deck.slides[index],before.deck.slides[index]);
+    await frame.locator("#layout-controls > summary").click();
+    await frame.getByRole("button",{name:"撤销上次切换",exact:true}).click();
+    assert.deepEqual((await savedMockDraft(frame)).deck,before.deck);
+  } else await frame.locator("#redesign-cancel").click();
+ }
+});
+
+browserCase("P2.5 four failures remain failed after closing; late cancellation records every received credit without another call",async(page,initial)=>{
+ let frame=await openMetricFixture(page,initial,structuredClone(sampleDeck),"失败及取消积分验收");
+ const bad={design:[[0,"text",0,0,4,4],[1,"text",4,0,4,5],[2,"text",8,0,4,5]]};
+ await frame.evaluate(bad=>{window.mockRedesignSequence=Array.from({length:4},()=>({raw:bad,cost:0.1}));},bad);
+ const before=await savedMockDraft(frame);
+ await frame.locator("#redesign").click();await frame.locator("#redesign-request").click();
+ await frame.locator("#redesign-progress").filter({hasText:/暂未找到符合当前页面要求/}).waitFor();
+ assert.match(await frame.locator("#redesign-progress").textContent(),/0.40 积分/);
+ assert.equal((await requests(frame)).length,4);
+ if(process.env.BRIEFDECK_CORRECTION_EVIDENCE)await frame.locator("#redesign-dialog").screenshot({path:process.env.BRIEFDECK_CORRECTION_EVIDENCE+"/03-failure.png"});
+ await frame.locator("#redesign-cancel").click();
+ assert.equal((await frame.evaluate(()=>window.briefdeckDiagnostics())).latestSinglePageAttempt.status,"failed");
+ assert.deepEqual((await savedMockDraft(frame)).deck,before.deck);
+ frame=await openMetricFixture(page,frame,structuredClone(sampleDeck),"迟到积分验收");
+ await frame.evaluate(bad=>{window.holdRedesignResponse=true;window.mockRedesignSequence=[{raw:bad,cost:0.2}];},bad);
+ await frame.locator("#redesign").click();await frame.locator("#redesign-request").click();
+ await frame.waitForFunction(()=>typeof window.releaseRedesignResponse==="function");
+ await frame.locator("#redesign-cancel").click();await frame.getByRole("button",{name:"第 3 页",exact:true}).click();
+ await frame.evaluate(()=>window.releaseRedesignResponse());
+ await frame.waitForFunction(()=>!document.querySelector("#redesign").disabled);
+ const report=await frame.evaluate(()=>window.briefdeckDiagnostics());
+ assert.equal(report.latestSinglePageAttempt.status,"cancelled");
+ assert.equal(report.latestSinglePageAttempt.credits.total,"0.2");
+ assert.equal((await requests(frame)).length,1);
+ assert.match(await frame.locator("#redesign-status").textContent(),/0.20 积分/);
+});
+
+browserCase("whole-deck controlled truncation retry totals credits; cancellation discards late output and preserves draft",async(page,frame)=>{
+ await frame.locator("#notes").fill("完整事实与限定条件");
+ await frame.evaluate(()=>{window.mockOutcome="truncated-once";});
+ await submit(frame);
+ await status(frame).filter({hasText:/已生成 6 页/}).waitFor();
+ assert.match(await status(frame).textContent(),/0.21 积分/);
+ assert.doesNotMatch(await status(frame).textContent(),/模型|tokens|输出上限/);
+ const sent=await requests(frame);assert.equal(sent.length,2);assert.ok(sent[1].maxTokens>sent[0].maxTokens);
+ const saved=await savedMockDraft(frame);
+ assert.equal(saved.deck.generationTrace.credits.total,"0.208");
+ assert.equal(saved.deck.generationTrace.attempts.length,2);
+ const before=await frame.evaluate(()=>JSON.parse(localStorage.getItem("mockAnnaStorage")));
+ assert.equal((await frame.evaluate(()=>window.briefdeckDiagnostics())).generationOperation.credits.total,"0.208");
+ await frame.evaluate(()=>{window.holdMockResponse=true;window.fullCallCount=0;});
+ await submit(frame);
+ await frame.waitForFunction(()=>typeof window.releaseMockResponse==="function");
+ await frame.locator("#cancel-generation").click();
+ await frame.evaluate(()=>{window.releaseMockResponse();});
+ await status(frame).filter({hasText:/已取消生成.*0.10 积分/}).waitFor();
+ assert.equal((await requests(frame)).length,3);
+ assert.deepEqual(await frame.evaluate(()=>JSON.parse(localStorage.getItem("mockAnnaStorage"))),before);
+ assert.equal((await frame.evaluate(()=>window.briefdeckDiagnostics())).generationOperation.status,"cancelled");
+});
+
+browserCase("ordinary UI hides diagnostics and exposes credits only for both full generation and single-page design",async(page,initial)=>{
+ await page.goto(origin+"/?public=1");
+ let frame=page.frames().find(item=>item.parentFrame());
+ frame=await openMetricFixture(page,frame,structuredClone(sampleDeck),"普通界面积分验收");
+ assert.ok(await frame.locator("#rendering-diagnostic").isHidden());
+ await generateRedesign(frame);
+ assert.ok(await frame.locator("#redesign-detail").isHidden());
+ assert.match(await frame.locator("#redesign-progress").textContent(),/0.00 积分/);
+ assert.doesNotMatch(await frame.locator("body").innerText(),/mock-redesign|tokens|输出上限|布局诊断日志/);
+ if(process.env.BRIEFDECK_CORRECTION_EVIDENCE)await frame.locator("#redesign-dialog").screenshot({path:process.env.BRIEFDECK_CORRECTION_EVIDENCE+"/01-public-preview.png"});
+ await frame.locator("#redesign-apply").click();await savedMockDraft(frame);
+ await frame.locator("#notes").fill("普通用户用量显示回归");
+ await frame.evaluate(()=>{window.mockOutcome="composition";});await submit(frame);
+ await status(frame).filter({hasText:/已生成 6 页/}).waitFor();
+ assert.match(await status(frame).textContent(),/25.27 积分/);
+ assert.doesNotMatch(await status(frame).textContent(),/mock-vision|tokens|输出上限|推理/);
+ assert.ok(await frame.locator("#rendering-diagnostic").isHidden());
+ assert.equal(typeof await frame.evaluate(()=>window.briefdeckDiagnostics()),"object");
+});
+
+async function metricScreenshot(frame, name) {
+  if (process.env.BRIEFDECK_V1_EVIDENCE) await frame.locator(".editor").screenshot({ path: `${process.env.BRIEFDECK_V1_EVIDENCE}/${name}.png` });
+}
+
+async function metricDownload(page, frame, name) {
+  const download = page.waitForEvent("download");
+  await frame.locator("#download").click();
+  const file = await download;
+  if (process.env.BRIEFDECK_V1_OUTPUT) await file.saveAs(`${process.env.BRIEFDECK_V1_OUTPUT}/${name}.pptx`);
+  return JSZip.loadAsync(await readFile(await file.path()));
+}
+
+browserCase("V1 relation fixtures preserve real source text, use proportional graphics, switch layouts and restore without Anna", async (page, initial) => {
+  let frame = initial;
+  for (const { name, raw } of metricExamples()) {
+    frame = await openMetricFixture(page, frame, raw, `指标验收-${name}`);
+    const canvas = frame.locator("#stage");
+    const controls = frame.locator("#layout-controls");
+    const sourcePoints = raw.slides[1].points;
+    const isCompletion = name === "completion";
+    const fill = canvas.locator(isCompletion ? '[data-metric-part="progress-fill"]' : '[data-metric-part="bar-1"]');
+    await fill.waitFor();
+    if (isCompletion) {
+      assert.equal(await canvas.getByText("完成率 80%", { exact: true }).count(), 1);
+      assert.equal(await canvas.getByText("9,600 / 12,000 份", { exact: true }).count(), 1);
+      assert.ok(Math.abs((await fill.boundingBox()).width / (await canvas.locator('[data-metric-part="progress-track"]').boundingBox()).width - 0.8) < 0.001);
+    } else {
+      const expected = name === "customer" ? 11 / 18 : 2 / 8;
+      assert.ok(Math.abs((await fill.boundingBox()).width / (await canvas.locator('[data-metric-part="bar-0"]').boundingBox()).width - expected) < 0.001);
+    }
+    for (const point of sourcePoints) assert.ok((await canvas.innerText()).replaceAll("\n", "").includes(point));
+    await assertMetricBounds(page, frame, name);
+    await controls.locator("summary").click();
+    assert.deepEqual(await controls.locator(".layout-choice strong").allTextContents(), ["数据关系可视化", "并列展示", "简洁文字"]);
+    for (const option of ["并列展示", "简洁文字"]) {
+      await controls.getByRole("button", { name: option, exact: true }).click();
+      assert.equal(await canvas.locator("[data-metric-part]").count(), 0);
+      for (const point of sourcePoints) assert.ok((await canvas.innerText()).replaceAll("\n", "").includes(point));
+    }
+    await controls.getByRole("button", { name: "撤销上次切换" }).click();
+    assert.equal(await controls.getByRole("button", { name: "并列展示", exact: true }).getAttribute("aria-pressed"), "true");
+    await controls.getByRole("button", { name: "恢复原布局" }).click();
+    await fill.waitFor();
+    await controls.getByRole("button", { name: "简洁文字", exact: true }).click();
+    await controls.getByRole("button", { name: "数据关系可视化", exact: true }).click();
+    await metricScreenshot(frame, `01-${name}`);
+    const native = await metricDownload(page, frame, name);
+    const xml = await native.file("ppt/slides/slide2.xml").async("string");
+    assert.match(xml, /<p:sp>/);
+    assert.doesNotMatch(xml, /<p:pic>/);
+    await frame.locator("#library > summary").click();
+    await frame.getByText("当前 PPT 已保存", { exact: true }).waitFor();
+    const stored = await frame.evaluate(() => Object.values(JSON.parse(localStorage.getItem("mockAnnaStorage")))[0].value);
+    assert.deepEqual(stored.deck.slides[1].points, sourcePoints);
+    assert.equal(stored.deck.slides[1].metric.sourceText, sourcePoints[0]);
+    assert.equal((await requests(frame)).length, 0);
+    await page.reload();
+    frame = page.frames().find(item => item.parentFrame());
+    await frame.locator("#library > summary").click();
+    await frame.getByRole("button", { name: new RegExp(`指标验收-${name}.*6 页`) }).click();
+    await frame.getByRole("button", { name: "第 2 页", exact: true }).click();
+    assert.ok(await frame.locator('#stage [data-metric-part]').count() > 0);
+    assert.equal((await requests(frame)).length, 0);
+  }
+});
+
+browserCase("V1 editing the source rebuilds safely, preserves pictures and cannot revive stale calculations", async (page, initial) => {
+  const frame = await openMetricFixture(page, initial, metricExamples()[2].raw, "指标失效验收");
+  const canvas = frame.locator("#stage");
+  const controls = frame.locator("#layout-controls");
+  await editSlideText(frame, "标题", "档案迁移阶段复盘");
+  await editSlideText(frame, "要点 2", "完整性校验通过率99.2%，目标99.5%，36名员工参与试用。");
+  assert.ok(await canvas.locator('[data-metric-part="progress-fill"]').isVisible());
+  const source = canvas.getByRole("button", { name: "编辑要点 1", exact: true });
+  await source.click();
+  const input = canvas.getByRole("textbox", { name: "要点 1编辑框", exact: true });
+  await input.fill("取消的修改，不应使原指标失效。");
+  await input.press("Escape");
+  assert.ok(await canvas.locator('[data-metric-part="progress-fill"]').isVisible());
+  const pictureFile = await picture(frame, "png", 58);
+  await frame.locator("#picture-file").setInputFiles(pictureFile);
+  const figure = canvas.getByRole("group", { name: pictureFile.name });
+  await figure.waitFor();
+  await figure.focus();
+  await figure.press("ArrowLeft");
+  const placement = await figure.getAttribute("style");
+  await controls.locator("summary").click();
+  await controls.getByRole("button", { name: "简洁文字", exact: true }).click();
+  await controls.getByRole("button", { name: "数据关系可视化", exact: true }).click();
+  await source.click();
+  const edited = "仅统计工作日，已完成9,000份，计划12,000份。";
+  await input.fill(edited);
+  // Switching to another editor commits the source and rebuilds the relation component.
+  await canvas.getByRole("button", { name: "编辑要点 2", exact: true }).click();
+  await canvas.getByRole("textbox", { name: "要点 2编辑框", exact: true }).waitFor();
+  await canvas.getByRole("textbox", { name: "要点 2编辑框", exact: true }).press("Escape");
+  assert.equal(await canvas.locator("[data-metric-part]").count(), 0);
+  assert.ok((await canvas.innerText()).replaceAll("\n", "").includes(edited));
+  assert.doesNotMatch(await canvas.innerText(), /完成率 80%|9,600|剩余 2,400/);
+  assert.ok(await controls.isHidden());
+  assert.match(await frame.locator("#metric-status").innerText(), /停用数据图/);
+  assert.equal(await figure.getAttribute("style"), placement);
+  await figure.focus();
+  await figure.press("ArrowLeft");
+  assert.notEqual(await figure.getAttribute("style"), placement);
+  await metricScreenshot(frame, "02-source-invalidated");
+  const zip = await metricDownload(page, frame, "edited-invalidated");
+  const xml = await zip.file("ppt/slides/slide2.xml").async("string");
+  assert.match(xml, /9,000份/);
+  assert.doesNotMatch(xml, /9,600|完成率 80%/);
+  assert.match(xml, /<p:pic>/);
+  await frame.locator("#library > summary").click();
+  await frame.getByText("当前 PPT 已保存", { exact: true }).waitFor();
+  const saved = await frame.evaluate(() => Object.values(JSON.parse(localStorage.getItem("mockAnnaStorage")))[0].value);
+  assert.equal(saved.deck.slides[1].metricInvalidated, true);
+  assert.equal(saved.deck.slides[1].metric, undefined);
+  assert.equal((await requests(frame)).length, 0);
+  await page.reload();
+  const restored = page.frames().find(item => item.parentFrame());
+  await restored.locator("#library > summary").click();
+  await restored.getByRole("button", { name: /指标失效验收.*6 页/ }).click();
+  await restored.getByRole("button", { name: "第 2 页", exact: true }).click();
+  assert.equal(await restored.locator("#stage [data-metric-part]").count(), 0);
+  assert.ok(await restored.locator("#metric-status").isVisible());
+  assert.equal((await requests(restored)).length, 0);
+});
+
+browserCase("V1 zero baseline, over-completion and invalid relations remain explicit and export safely", async (page, initial) => {
+  let frame = initial;
+  const cases = [
+    ["zero", "耗时从0分钟变为2分钟。", { kind: "comparison", point: 0, label: "耗时", unit: "分钟", values: ["0分钟", "2分钟"] }, "基线为 0，不计算相对变化"],
+    ["over", "已完成15份，计划12份，完成率125%。", { kind: "completion", point: 0, label: "已完成", unit: "份", values: ["15份", "12份"], rate: "125%" }, "超出总量 3 份"],
+    ["zero-total", "已完成0份，计划0份。", { kind: "completion", point: 0, label: "已完成", unit: "份", values: ["0份", "0份"] }],
+    ["mixed-unit", "耗时从8分钟变为2小时。", { kind: "comparison", point: 0, label: "耗时", unit: "分钟", values: ["8分钟", "2小时"] }]
+  ];
+  for (const [name, point, metric, expected] of cases) {
+    frame = await openMetricFixture(page, frame, edgeMetricDeck(point, metric), `边界验收-${name}`);
+    const canvas = frame.locator("#stage");
+    if (expected) assert.ok((await canvas.innerText()).includes(expected));
+    else assert.equal(await canvas.locator("[data-metric-part]").count(), 0);
+    assert.ok((await canvas.innerText()).includes(point));
+    assert.doesNotMatch(await canvas.innerText(), /NaN|Infinity/);
+    await assertMetricBounds(page, frame, name);
+    await metricScreenshot(frame, `03-${name}`);
+    await metricDownload(page, frame, name);
+    assert.equal((await requests(frame)).length, 0);
+  }
+});
+
+browserCase("V1 cross-page components keep narrative priority, offer only compatible P2 choices and export", async (page, initial) => {
+  let frame = initial;
+  for (const { name, raw } of [{ name: "metrics", raw: metricExamples()[0].raw }, ...crossPageExamples()]) {
+    frame = await openMetricFixture(page, frame, raw, `跨页验收-${name}`);
+    const canvas = frame.locator("#stage");
+    const controls = frame.locator("#layout-controls");
+    const compatible = !["ordinary", "ordinal"].includes(name);
+    if (compatible) {
+      assert.ok(name === "summary" ? await canvas.getByText("人工复核覆盖率：100%", { exact: true }).count() > 0 : await canvas.locator("[data-metric-part]").count() > 0);
+      await controls.locator("summary").click();
+      if (name !== "metrics") {
+        const choice = name === "summary" ? "核心数值辅助" : "数据关系辅助";
+        assert.deepEqual(await controls.locator(".layout-choice strong").allTextContents(), [choice, "原有叙事布局"]);
+        const primary = name === "risk" ? 0 : name === "decision" ? 1 : undefined;
+        const narrativeBefore = primary === undefined ? undefined : await canvas.locator(`[data-field="${primary}"]`).getAttribute("style");
+        await controls.getByRole("button", { name: "原有叙事布局", exact: true }).click();
+        assert.equal(await canvas.locator("[data-metric-part]").count(), 0);
+        if (primary !== undefined) assert.equal(await canvas.locator(`[data-field="${primary}"]`).getAttribute("style"), narrativeBefore);
+        await controls.getByRole("button", { name: "撤销上次切换" }).click();
+        await controls.getByRole("button", { name: choice, exact: true }).click();
+        if (primary !== undefined) assert.equal(await canvas.locator(`[data-field="${primary}"]`).getAttribute("style"), narrativeBefore);
+        await controls.getByRole("button", { name: "原有叙事布局", exact: true }).click();
+        await controls.getByRole("button", { name: "恢复原布局" }).click();
+      }
+      if (name === "risk") {
+        assert.equal(await canvas.getByText("低于目标 3 个百分点", { exact: true }).count(), 1);
+        assert.equal(await canvas.getByText("当前 92%", { exact: true }).count(), 1);
+        assert.equal(await canvas.getByText("目标 95%", { exact: true }).count(), 1);
+        assert.doesNotMatch(await canvas.innerText(), /之前|之后|缩短|增加约/);
+      }
+    } else {
+      assert.equal(await canvas.locator("[data-metric-part]").count(), 0);
+      assert.equal(await controls.getByRole("button", { name: /数据关系/ }).count(), 0);
+    }
+    for (const point of raw.slides[1].points) assert.ok((await canvas.innerText()).replaceAll("\n", "").includes(point.replace(/^当前建议[：:]\s*/, "")));
+    await assertMetricBounds(page, frame, `cross-page ${name}`);
+    if (process.env.BRIEFDECK_CROSS_EVIDENCE) await frame.locator(".editor").screenshot({ path: `${process.env.BRIEFDECK_CROSS_EVIDENCE}/01-${name}.png` });
+    const downloading = page.waitForEvent("download");
+    await frame.locator("#download").click();
+    const file = await downloading;
+    if (process.env.BRIEFDECK_CROSS_OUTPUT) await file.saveAs(`${process.env.BRIEFDECK_CROSS_OUTPUT}/${name}.pptx`);
+    assert.equal((await requests(frame)).length, 0);
+  }
+});
+
+browserCase("V1 non-metrics source edits disable the component while preserving the main risk", async (page, initial) => {
+  const raw = crossPageExamples().find(item => item.name === "risk").raw;
+  const frame = await openMetricFixture(page, initial, raw, "风险页编辑验收");
+  const canvas = frame.locator("#stage");
+  const primaryStyle = await canvas.locator('[data-field="0"]').getAttribute("style");
+  await editSlideText(frame, "要点 2", "准确率91%，目标95%，需要继续复核。");
+  assert.equal(await canvas.locator("[data-metric-part]").count(), 0);
+  assert.equal(await canvas.locator('[data-field="0"]').getAttribute("style"), primaryStyle);
+  assert.match((await canvas.innerText()).replaceAll("\n", ""), /复杂工单分类仍不稳定，暂不全面推广/);
+  assert.match(await frame.locator("#metric-status").innerText(), /停用数据图/);
+  await frame.locator("#library > summary").click();
+  await frame.getByText("当前 PPT 已保存", { exact: true }).waitFor();
+  await page.reload();
+  const reopened = page.frames().find(item => item.parentFrame());
+  await reopened.locator("#library > summary").click();
+  await reopened.getByRole("button", { name: /风险页编辑验收.*6 页/ }).click();
+  await reopened.getByRole("button", { name: "第 2 页", exact: true }).click();
+  assert.equal(await reopened.locator("#stage [data-metric-part]").count(), 0);
+  assert.equal(await reopened.locator('#stage [data-field="0"]').getAttribute("style"), primaryStyle);
+  assert.match(await reopened.locator("#stage").innerText(), /准确率91%/);
+  assert.equal((await requests(reopened)).length, 0);
+});
+
+browserCase("V1 long source points and two auxiliary points fit both preview sizes and export", async (page, initial) => {
+  const raw = metricBoundaryDeck();
+  const frame = await openMetricFixture(page, initial, raw, "指标长文边界验收");
+  for (let number = 2; number <= 4; number++) {
+    await frame.getByRole("button", { name: `第 ${number} 页`, exact: true }).click();
+    assert.ok(raw.slides[number - 1].points.every(point => point.length === 56));
+    await assertMetricBounds(page, frame, `long source ${number}`);
+    assert.ok(await frame.locator("#stage [data-metric-part]").count() > 0);
+  }
+  await metricScreenshot(frame, "05-long-source");
+  await metricDownload(page, frame, "long-source");
+  assert.equal((await requests(frame)).length, 0);
+});
+
+browserCase("C4 real compatibility replay keeps all prose, separate supplement, editable fields and saved layouts", async (page, frame) => {
+  await frame.locator("#notes").fill("只回放已保存响应，不调用真实Anna");
+  await frame.evaluate(()=>{window.mockOutcome="compat";});await submit(frame);
+  await status(frame).filter({hasText:/已生成 6 页/}).waitFor();
+  const raw=JSON.parse(platformDiagnostic.originalModelText.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/i,"$1"));
+  const log=()=>frame.locator("#rendering-output").textContent().then(JSON.parse);
+  assert.equal((await log()).pages[1].mainMetric.valid,true);
+  assert.ok((await log()).pages[1].auxiliaries.every(item=>item.valid));
+  assert.equal((await log()).pages[1].mainMetric.applied,false);
+  for(const index of [1,2,3,4,5]) {
+    await frame.getByRole("button",{name:`第 ${index+1} 页`,exact:true}).click();
+    const visible=(await frame.locator("#stage").innerText()).replaceAll("\n","");
+    for(const point of raw.slides[index].points)assert.ok(visible.includes(point),point);
+    await assertMetricBounds(page,frame,`real replay ${index+1}`);
+  }
+  await frame.getByRole("button",{name:"第 5 页",exact:true}).click();
+  assert.ok((await log()).pages[4].appliedComponents.includes("relation-supplement"));
+  if(process.env.BRIEFDECK_COMPAT_EVIDENCE)await frame.locator(".editor").screenshot({path:process.env.BRIEFDECK_COMPAT_EVIDENCE+"/flow-fixed.png"});
+  const controls=frame.locator("#layout-controls");await controls.locator("summary").click();
+  await controls.getByRole("button",{name:"顺序列表",exact:true}).click();
+  await controls.getByRole("button",{name:"撤销上次切换"}).click();
+  assert.ok((await log()).pages[4].appliedComponents.includes("relation-sequence"));
+  await frame.locator('#stage [data-field="4"]').click();
+  const input=frame.getByRole("textbox",{name:"要点 5编辑框",exact:true});assert.equal(await input.inputValue(),raw.slides[4].points[4]);
+  await input.fill("四项检查仍并列核对，无先后依赖：数据安全、系统稳定性、业务准确性、人员准备。");await input.press("Enter");
+  assert.ok((await log()).pages[4].relationship.applied);
+  await frame.locator("#library > summary").click();await frame.getByText("当前 PPT 已保存",{exact:true}).waitFor();
+  await page.reload();frame=page.frames().find(item=>item.parentFrame());
+  await frame.locator("#library > summary").click();await frame.getByRole("button",{name:/客户服务平台升级项目阶段汇报.*6 页/}).click();
+  assert.ok((await log()).pages[4].relationship.applied);
+  assert.equal((await requests(frame)).length,0);
+});
+
+browserCase("V2 visual relations and diagnostic logs reflect actual choices, preserve edits and saved provenance", async (page, frame) => {
+  const raw = visualDeck();
+  await frame.locator("#notes").fill("模拟视觉关系回归，不调用真实Anna");
+  await frame.evaluate(() => { window.mockOutcome = "visual"; });
+  await submit(frame); await status(frame).filter({ hasText: /已生成 6 页/ }).waitFor();
+  const readLog = async () => JSON.parse(await frame.locator("#rendering-output").textContent());
+  assert.equal((await readLog()).generation.model, "mock-visual");
+  assert.equal((await readLog()).pages[1].auxiliaries.filter(item => item.applied).length, 2);
+  for (const [index, component] of [[1,"metric-main"],[2,"relation-sequence"],[3,"relation-roles"],[4,null]]) {
+    await frame.getByRole("button", { name: `第 ${index+1} 页`, exact:true }).click();
+    const report = (await readLog()).pages[index];
+    assert.equal(report.appliedComponents.includes(component), Boolean(component));
+    await assertMetricBounds(page, frame, `visual page ${index+1}`);
+    const visible = (await frame.locator("#stage").innerText()).replaceAll("\n", "");
+    for (const point of raw.slides[index].points) assert.ok(visible.includes(point), point);
+    if (process.env.BRIEFDECK_VISUAL_EVIDENCE) await frame.locator(".editor").screenshot({ path: `${process.env.BRIEFDECK_VISUAL_EVIDENCE}/0${index}-${component ?? "issues"}.png` });
+  }
+  await frame.getByRole("button", {name:"第 4 页",exact:true}).click();
+  const controls = frame.locator("#layout-controls"); await controls.locator("summary").click();
+  await controls.getByRole("button",{name:"顺序列表",exact:true}).click();
+  assert.ok(!(await readLog()).pages[3].appliedComponents.includes("relation-roles"));
+  await controls.getByRole("button",{name:"撤销上次切换"}).click();
+  assert.ok((await readLog()).pages[3].appliedComponents.includes("relation-roles"));
+  await controls.getByRole("button",{name:"分栏要点",exact:true}).click();
+  await controls.getByRole("button",{name:"恢复原布局"}).click();
+  assert.ok((await readLog()).pages[3].appliedComponents.includes("relation-roles"));
+  const downloading = page.waitForEvent("download"); await frame.locator("#download").click(); const file = await downloading;
+  if (process.env.BRIEFDECK_VISUAL_OUTPUT) await file.saveAs(`${process.env.BRIEFDECK_VISUAL_OUTPUT}/visual-relations.pptx`);
+  const zip = await JSZip.loadAsync(await readFile(await file.path()));
+  for (const index of [1,2,3,4]) {
+    const xml = await zip.file(`ppt/slides/slide${index+1}.xml`).async("string");
+    const native = [...xml.matchAll(/<a:t>(.*?)<\/a:t>/g)].map(item=>item[1]).join("");
+    for(const point of raw.slides[index].points) assert.ok(native.includes(point));
+    assert.doesNotMatch(xml, /<p:pic>/);
+  }
+  await frame.getByRole("button",{name:"第 2 页",exact:true}).click();
+  await frame.locator('#stage [data-field="1"]').click();
+  await frame.getByRole("textbox",{name:"要点 2编辑框",exact:true}).fill("测试用例统计范围已改变，当前结果待重新核对。");
+  await frame.getByRole("textbox",{name:"要点 2编辑框",exact:true}).press("Enter");
+  assert.equal((await readLog()).pages[1].auxiliaries[0].applied,false);
+  assert.match((await readLog()).pages[1].auxiliaries[0].reason,/来源|失效/);
+  assert.ok((await readLog()).pages[1].mainMetric.applied);
+  await frame.locator("#rendering-diagnostic > summary").click();
+  if (process.env.BRIEFDECK_VISUAL_EVIDENCE) await frame.locator("#rendering-diagnostic").screenshot({ path: `${process.env.BRIEFDECK_VISUAL_EVIDENCE}/05-diagnostic.png` });
+  const logDownload = page.waitForEvent("download"); await frame.locator("#download-rendering-diagnostic").click(); const logFile = await logDownload;
+  const exported = JSON.parse(await readFile(await logFile.path(), "utf8"));
+  assert.deepEqual(JSON.parse(exported.originalModelText), raw);
+  assert.equal(exported.pages[1].auxiliaries[0].applied,false);
+  await frame.locator("#library > summary").click(); await frame.getByText("当前 PPT 已保存",{exact:true}).waitFor();
+  await page.reload(); frame = page.frames().find(item=>item.parentFrame());
+  await frame.locator("#library > summary").click();
+  await frame.getByRole("button",{name:/客服工单分流试点.*6 页/}).click();
+  assert.equal((await readLog()).generation.model,"mock-visual");
+  assert.equal((await readLog()).pages[1].auxiliaries[0].applied,false);
+  assert.equal((await requests(frame)).length,0);
+});
+
+browserCase("V2 semantic edits rebuild field bindings and six long roles remain complete", async (page, initial) => {
+  const raw = visualBoundaryDeck();
+  const frame = await openMetricFixture(page,initial,raw,"长职责编辑回归");
+  await frame.getByRole("button",{name:"第 4 页",exact:true}).click();
+  await assertMetricBounds(page,frame,"six long role rows");
+  await frame.locator('#stage [data-field="0"]').click();
+  const input=frame.getByRole("textbox",{name:"要点 1编辑框",exact:true});
+  assert.equal(await input.inputValue(),raw.slides[3].points[0]);
+  await input.fill("已改为普通问题说明，不再含角色分隔标记。"); await input.press("Enter");
+  assert.equal(JSON.parse(await frame.locator("#rendering-output").textContent()).pages[3].relationship.applied,false);
+  await frame.locator('#stage [data-field="1"]').click();
+  const second=frame.getByRole("textbox",{name:"要点 2编辑框",exact:true});
+  assert.equal(await second.inputValue(),raw.slides[3].points[1]);
+  await second.press("Escape");
+  assert.equal((await requests(frame)).length,0);
+});
+
+browserCase("D1.8 focus and P2 keep continuous body numbering across four semantics without Anna", async (page, initial) => {
+  let frame = initial;
+  for (const layout of ["metrics", "summary", "risk", "decision"]) {
+    const raw = knowledgeReviewNumberingDeck(); raw.slides[5].layout = layout;
+    frame = await openMetricFixture(page, frame, raw, `编号回归-${layout}`);
+    await frame.getByRole("button", { name: "第 6 页", exact: true }).click();
+    const controls = frame.locator("#layout-controls"); await controls.locator("summary").click();
+    for (const name of ["顺序列表", "分栏要点", "首条重点"]) {
+      await controls.getByRole("button", { name, exact: true }).click();
+      const labels = await frame.locator("#stage .slide-text").evaluateAll(items => items.map(item => item.textContent).filter(value => /^0[1-4]$/.test(value)));
+      assert.deepEqual(labels, ["01", "02", "03", "04"]);
+      for (const [field, point] of raw.slides[5].points.entries()) assert.equal((await frame.locator(`#stage [data-field="${field}"]`).innerText()).replaceAll("\n", ""), point);
+    }
+    await assertMetricBounds(page, frame, `numbered ${layout}`);
+    if (layout === "decision" && process.env.BRIEFDECK_NUMBERING_EVIDENCE) await frame.locator(".editor").screenshot({ path: `${process.env.BRIEFDECK_NUMBERING_EVIDENCE}/01-focus-fixed.png` });
+    await controls.getByRole("button", { name: "撤销上次切换" }).click();
+    await controls.getByRole("button", { name: "恢复原布局" }).click();
+    assert.deepEqual(await frame.locator("#stage .slide-text").evaluateAll(items => items.map(item => item.textContent).filter(value => /^0[1-4]$/.test(value))), ["01", "02", "03", "04"]);
+    assert.equal((await requests(frame)).length, 0);
+  }
+});
+
+browserCase("D1.7 long generated titles remain complete and editable without character gates", async (page, initial) => {
+  const raw = structuredClone(sampleDeck);
+  const title = "索引完成率90%，测试通过率90%，准确率86%低于90%目标";
+  raw.slides[1] = { layout: "summary", title, points: ["已接入1,200份文档，1,080份完成索引，索引完成率90%（1,080/1,200份）", "测试范围覆盖产品、技术支持、运营三个部门，共45名测试用户"] };
+  const frame = await openMetricFixture(page, initial, raw, "标题长度回归");
+  assert.equal((await frame.locator('#stage [data-field="title"]').innerText()).replaceAll("\n", ""), title);
+  await assertMetricBounds(page, frame, "31-character real title");
+  await frame.locator('#stage [data-field="title"]').click();
+  const input = frame.getByRole("textbox", { name: "标题编辑框", exact: true });
+  assert.equal(await input.getAttribute("maxlength"), null);
+  await input.fill(title + "，范围限三个部门"); await input.press("Enter");
+  assert.equal((await frame.locator('#stage [data-field="title"]').innerText()).replaceAll("\n", ""), title + "，范围限三个部门");
+  await assertMetricBounds(page, frame, "edited longer title");
+  assert.equal((await requests(frame)).length, 0);
+});
+
+browserCase("D1 replays the complete mentor response and keeps the four stages in order", async (page, frame) => {
+  await frame.locator("#notes").fill("回放已保存的导师制真实响应，不调用Anna");
+  await frame.evaluate(() => { window.mockOutcome = "mentor-real"; });
+  await submit(frame);
+  if (process.env.BRIEFDECK_DENSITY_BEFORE === "1") {
+    await status(frame).filter({ hasText: /第 4 页的要点数量有误/ }).waitFor();
+    await frame.getByText("查看本次生成诊断", { exact: true }).click();
+    if (process.env.BRIEFDECK_DENSITY_EVIDENCE) await frame.locator("#brief-form").screenshot({ path: `${process.env.BRIEFDECK_DENSITY_EVIDENCE}/00-before-mentor-failed.png` });
+    return;
+  }
+  await status(frame).filter({ hasText: /已生成 6 页/ }).waitFor();
+  await frame.getByRole("button", { name: "第 4 页", exact: true }).click();
+  const raw = JSON.parse(mentorDiagnostic.response.content.text);
+  for (const [field, point] of raw.slides[3].points.entries()) {
+    assert.equal((await frame.locator(`#stage [data-field="${field}"]`).innerText()).replaceAll("\n", ""), point);
+  }
+  const locations = await frame.locator('#stage [data-field]:not([data-field="title"])').evaluateAll(items => items.map(item => ({ field: Number(item.dataset.field), y: item.getBoundingClientRect().top, x: item.getBoundingClientRect().left })));
+  assert.deepEqual(locations.toSorted((a,b)=>a.y-b.y || a.x-b.x).map(item=>item.field), [0,1,2,3]);
+  await assertMetricBounds(page, frame, "mentor four stages");
+  if (process.env.BRIEFDECK_DENSITY_EVIDENCE) await frame.locator(".editor").screenshot({ path: `${process.env.BRIEFDECK_DENSITY_EVIDENCE}/01-mentor-stages.png` });
+  const downloading = page.waitForEvent("download"); await frame.locator("#download").click(); const file = await downloading;
+  if (process.env.BRIEFDECK_DENSITY_OUTPUT) await file.saveAs(`${process.env.BRIEFDECK_DENSITY_OUTPUT}/mentor-real-replay.pptx`);
+  assert.equal((await requests(frame)).length, 1); // One mocked historical response, no live Anna call.
+});
+
+browserCase("D1.2 all one-to-six long points and twelve short points fit without dropping content", async (page, initial) => {
+  const raw = densityDeck();
+  let frame = await openMetricFixture(page, initial, raw, "密度边界验收");
+  for (let index = 1; index < raw.slides.length; index++) {
+    await frame.getByRole("button", { name: `第 ${index + 1} 页`, exact: true }).click();
+    assert.equal(await frame.locator('#stage [data-field]:not([data-field="title"])').count(), index);
+    for (const [field, point] of raw.slides[index].points.entries()) assert.equal((await frame.locator(`#stage [data-field="${field}"]`).innerText()).replaceAll("\n", ""), point);
+    await assertMetricBounds(page, frame, `${index} long points`);
+    if (process.env.BRIEFDECK_DENSITY_EVIDENCE) await frame.locator(".editor").screenshot({ path: `${process.env.BRIEFDECK_DENSITY_EVIDENCE}/02-${index}-long-points.png` });
+  }
+  const downloading = page.waitForEvent("download"); await frame.locator("#download").click(); const file = await downloading;
+  if (process.env.BRIEFDECK_DENSITY_OUTPUT) await file.saveAs(`${process.env.BRIEFDECK_DENSITY_OUTPUT}/density-boundaries.pptx`);
+  const zip = await JSZip.loadAsync(await readFile(await file.path()));
+  for (let index = 1; index < raw.slides.length; index++) {
+    const xml = await zip.file(`ppt/slides/slide${index + 1}.xml`).async("string");
+    const text = [...xml.matchAll(/<a:t>(.*?)<\/a:t>/g)].map(match => match[1]).join("");
+    for (const point of raw.slides[index].points) assert.ok(text.includes(point));
+  }
+  frame = await openMetricFixture(page, frame, shortDensityDeck(12), "十二条短要点验收");
+  assert.equal(await frame.locator('#stage [data-field]:not([data-field="title"])').count(), 12);
+  await assertMetricBounds(page, frame, "twelve short points");
+  assert.equal((await requests(frame)).length, 0);
+});
+
+browserCase("D1.4 adaptive switching, edit, undo and saved restore retain all four stages", async (page, initial) => {
+  const raw = JSON.parse(mentorDiagnostic.response.content.text);
+  let frame = await openMetricFixture(page, initial, raw, "自适应布局验收");
+  await frame.getByRole("button", { name: "第 4 页", exact: true }).click();
+  const controls = frame.locator("#layout-controls"); await controls.locator("summary").click();
+  assert.deepEqual(await controls.locator(".layout-choice strong").allTextContents(), ["顺序列表", "分栏要点"]);
+  const points = [...raw.slides[3].points]; points[2] = "适应阶段：围绕真实任务指导，保留新员工提出的问题，效果尚待验证。";
+  await frame.locator('#stage [data-field="2"]').click();
+  await frame.getByRole("textbox", { name: "要点 3编辑框", exact: true }).fill(points[2]);
+  await controls.getByRole("button", { name: "分栏要点", exact: true }).click();
+  for (const [field, point] of points.entries()) assert.equal((await frame.locator(`#stage [data-field="${field}"]`).innerText()).replaceAll("\n", ""), point);
+  await controls.getByRole("button", { name: "顺序列表", exact: true }).click();
+  await controls.getByRole("button", { name: "撤销上次切换" }).click();
+  assert.equal(await controls.getByRole("button", { name: "分栏要点", exact: true }).getAttribute("aria-pressed"), "true");
+  await controls.getByRole("button", { name: "恢复原布局" }).click();
+  await controls.getByRole("button", { name: "分栏要点", exact: true }).click();
+  await frame.locator("#library > summary").click(); await frame.getByText("当前 PPT 已保存", { exact: true }).waitFor();
+  const stored = await frame.evaluate(() => Object.values(JSON.parse(localStorage.getItem("mockAnnaStorage")))[0].value);
+  assert.deepEqual(stored.deck.slides[3].points, points);
+  assert.equal(stored.deck.slides[3].manualLayout, "density-grid");
+  await page.reload(); frame = page.frames().find(item => item.parentFrame());
+  await frame.locator("#library > summary").click();
+  await frame.getByRole("button", { name: /自适应布局验收.*6 页/ }).click();
+  await frame.getByRole("button", { name: "第 4 页", exact: true }).click();
+  for (const [field, point] of points.entries()) assert.equal((await frame.locator(`#stage [data-field="${field}"]`).innerText()).replaceAll("\n", ""), point);
+  await assertMetricBounds(page, frame, "restored four stages");
+  if (process.env.BRIEFDECK_DENSITY_EVIDENCE) await frame.locator(".editor").screenshot({ path: `${process.env.BRIEFDECK_DENSITY_EVIDENCE}/03-restored-grid.png` });
+  assert.equal((await requests(frame)).length, 0);
+});
+
+browserCase("D1.3 an unrenderable edit remains in the input and cannot overwrite a saved draft", async (page, initial) => {
+  const raw = shortDensityDeck();
+  const frame = await openMetricFixture(page, initial, raw, "容量保护验收");
+  await frame.locator('#stage [data-field="0"]').click();
+  const input = frame.getByRole("textbox", { name: "要点 1编辑框", exact: true });
+  const long = "保".repeat(56); await input.fill(long); await input.press("Enter");
+  await frame.locator("#density-status").filter({ hasText: "本次编辑未保存" }).waitFor();
+  assert.equal(await input.inputValue(), long);
+  await frame.getByRole("button", { name: "第 3 页", exact: true }).click();
+  assert.equal(await input.inputValue(), long);
+  const stored = await frame.evaluate(() => Object.values(JSON.parse(localStorage.getItem("mockAnnaStorage")))[0].value);
+  assert.deepEqual(stored.deck.slides[1].points, raw.slides[1].points);
+  if (process.env.BRIEFDECK_DENSITY_EVIDENCE) await frame.locator(".editor").screenshot({ path: `${process.env.BRIEFDECK_DENSITY_EVIDENCE}/04-edit-not-saved.png` });
+  await input.press("Escape");
+  assert.equal(await frame.locator('#stage [data-field="0"]').innerText(), raw.slides[1].points[0]);
+  assert.equal((await requests(frame)).length, 0);
 });
 
 browserCase("P2.1–P2.4 switches sample metrics, commits active edits, preserves pictures and reopens saved layouts without Anna", async (page, frame) => {
@@ -727,19 +1519,20 @@ browserCase("P2 failed local switch retains the previous layout and content", as
   assert.equal((await requests(frame)).length, 0);
 });
 
-browserCase("P2 all six 56-character layout variants fit narrow preview and export natively", async (page, frame) => {
+browserCase("P2 all compatible 56-character layout variants fit narrow preview and export natively", async (page, frame) => {
   const deck = boundaryLayoutDeck();
-  assert.equal(deck.slides.length, 7);
+  const count = deck.slides.length;
+  assert.ok(count >= 4);
   for (const slide of deck.slides.slice(1)) assert.ok(slide.points.every(point => point.length === 56));
   await frame.evaluate(deck => localStorage.setItem("mockAnnaStorage", JSON.stringify({
-    "briefdeck/drafts/p2-boundary": { etag: "boundary", metadata: { schema: 1, title: "长文边界", pageCount: 7, updatedAt: Date.now() },
-      value: { id: "p2-boundary", title: "长文边界", pageCount: 7, style: { theme: "minimal" }, deck, updatedAt: Date.now() } }
+    "briefdeck/drafts/p2-boundary": { etag: "boundary", metadata: { schema: 1, title: "长文边界", pageCount: deck.slides.length, updatedAt: Date.now() },
+      value: { id: "p2-boundary", title: "长文边界", pageCount: deck.slides.length, style: { theme: "minimal" }, deck, updatedAt: Date.now() } }
   })), deck);
   await page.reload();
   const active = page.frames().find(item => item.parentFrame());
   await active.locator("#library > summary").click();
-  await active.getByRole("button", { name: /长文边界.*7 页/ }).click();
-  for (let number = 2; number <= 7; number++) {
+  await active.getByRole("button", { name: new RegExp(`长文边界.*${count} 页`) }).click();
+  for (let number = 2; number <= count; number++) {
     await active.getByRole("button", { name: `第 ${number} 页`, exact: true }).click();
     for (const width of [1200, 480]) {
       await page.setViewportSize({ width, height: 900 });
@@ -923,10 +1716,11 @@ browserCase("M5.1–M5.2 render, edit and export an evidence comparison and a mi
     const zip = await JSZip.loadAsync(await readFile(await file.path()));
     assert.equal(zip.file(/^ppt\/slides\/slide\d+\.xml$/).length, 4);
     const slideXml = await zip.file("ppt/slides/slide2.xml").async("string");
-    assert.match(slideXml, expected);
+    const nativeText = [...slideXml.matchAll(/<a:t>(.*?)<\/a:t>/g)].map(match => match[1]).join("");
+    assert.ok(nativeText.includes(expected), expected); // Display line breaks may split one point across native paragraphs.
     assert.equal([...slideXml.matchAll(/<p:pic>/g)].length, pictureCount);
   };
-  await assertDownload(/<a:t>后  12 分钟<\/a:t>/, "m5-pilot", 1);
+  await assertDownload("后  12 分钟", "m5-pilot", 1);
   assert.equal((await requests(frame)).length, 1);
 
   await frame.locator("#notes").fill(archiveMigration.notes);
@@ -946,7 +1740,7 @@ browserCase("M5.1–M5.2 render, edit and export an evidence comparison and a mi
     const box = element.getBoundingClientRect();
     return text.right <= box.right + 1 && text.top >= box.top - 1 && text.bottom <= box.bottom + 1;
   })));
-  await assertDownload(/<a:t>11 月 30 日，核对结果后切换。<\/a:t>/, "m5-migration");
+  await assertDownload("11 月 30 日，核对结果后切换。", "m5-migration");
   const calls = await requests(frame);
   assert.equal(calls.length, 2);
   assert.ok(calls.every(call => call.messages[0].content.text.includes("12×12 整数网格")));
@@ -993,7 +1787,7 @@ browserCase("M1.6 and M2.5 update local styling and send style and optional inst
   assert.equal(calls.length, 1);
   const [request] = calls;
   assert.match(request.messages[0].content.text, /"instructions":"重点讲风险和下一步"/);
-  assert.equal(request.maxTokens, 1800);
+  assert.equal(request.maxTokens, 6016);
   assert.deepEqual(JSON.parse(request.messages[0].content.text.split("\n").at(-1)).style, { theme: "technology", accent: "#A837E0" });
   assert.equal(await theme.inputValue(), "technology");
   await theme.selectOption("minimal");

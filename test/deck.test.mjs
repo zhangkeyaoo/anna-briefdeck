@@ -8,16 +8,456 @@ import { dimensions, layoutOptions, movePicture, placePicture, resizePicture, sl
 import { archiveMigration, prioritizedPilot, supportPilot } from "./slide-design-fixtures.mjs";
 import { readFileSync } from "node:fs";
 import { restoreDraft, snapshotDraft } from "../bundle/library.js";
+import { invalidateMetricForEdit, metricIsStale, parseMetric, resolveMetric } from "../bundle/metric.js";
+import { crossPageExamples, edgeMetricDeck, metricExamples } from "./metric-fixtures.mjs";
+import { densityDeck, shortDensityDeck } from "./density-fixtures.mjs";
+import { densityPlans } from "../bundle/density.js";
+import { knowledgeReviewNumberingDeck } from "./numbering-fixtures.mjs";
+import { visualDeck } from "./visual-fixtures.mjs";
+import { relationshipPlan } from "../bundle/relationships.js";
+import { renderingDiagnostics } from "../bundle/diagnostics.js";
+import { resolveAuxMetrics } from "../bundle/metric.js";
+
+test("V2 relationships express explicit roles and ordered steps, preserve full native source and decline guesses", async () => {
+  const raw = visualDeck();
+  const deck = parseDeck(response(JSON.stringify(raw)), 6);
+  for (const [index, id] of [[2, "relation-sequence"], [3, "relation-roles"]]) {
+    const slide = deck.slides[index];
+    assert.equal(relationshipPlan(slide).id, id);
+    assert.ok(slideLayout(slide, index, 6).elements.some(item => item.component === id));
+    for (const choice of layoutOptions(slide, index)) {
+      const changed = withLayoutChoice(slide, index, 6, choice.id);
+      assert.deepEqual(changed.points, raw.slides[index].points);
+      const restored = await restoreDraft(snapshotDraft("visual", { slides: deck.slides.map((item,i) => i === index ? changed : item) }, {}));
+      const xml = await (await JSZip.loadAsync(await createPresentation(restored, PptxGenJS).write({ outputType: "nodebuffer" }))).file(`ppt/slides/slide${index+1}.xml`).async("string");
+      const native = [...xml.matchAll(/<a:t>(.*?)<\/a:t>/g)].map(item => item[1]).join("");
+      for (const point of slide.points) assert.ok(native.includes(point), point);
+      assert.doesNotMatch(xml, /<p:pic>/);
+    }
+  }
+  assert.equal(relationshipPlan(deck.slides[4]).id, undefined);
+  for (const slide of [
+    { title: "四项机制", layout: "summary", points: ["需求确认", "资源核对", "执行跟进", "结果复核"] },
+    { title: "角色职责", layout: "summary", points: ["主管：确认目标；员工：提出问题", "负责人：协调"] },
+    { title: "实施流程", layout: "progress", points: ["第一步：确认", "第三步：提交"] }
+  ]) assert.equal(relationshipPlan(slide).id, undefined);
+  for (const count of [4,5,6]) {
+    const slide = { title: "角色职责", layout: "summary", points: Array.from({length:count},(_,i) => `角色${i+1}：` + "核".repeat(51)) };
+    assert.ok(relationshipPlan(slide).cells);
+  }
+});
+
+test("V2 main and auxiliary metrics require exact provenance, retain priority, and expire after edits", async () => {
+  const raw = visualDeck();
+  const deck = parseDeck(response(JSON.stringify(raw)), 6);
+  const slide = deck.slides[1];
+  assert.equal(resolveAuxMetrics(slide).length, 2);
+  const elements = slideLayout(slide, 1, 6).elements;
+  assert.ok(elements.some(item => item.component === "metric-main"));
+  for (const [index, item] of deck.slides.entries()) {
+    const texts = slideLayout(item,index,6).elements.filter(element=>element.kind === "text" && element.value);
+    for (const a of texts) for (const b of texts.filter(other=>other !== a)) assert.ok(a.x+a.w <= b.x || b.x+b.w <= a.x || a.y+a.h <= b.y || b.y+b.h <= a.y, `page ${index+1}: text regions must not overlap`);
+  }
+  for (const point of [1,2]) assert.ok(elements.some(item => item.metricPoint === point && item.component?.startsWith("metric-aux:")));
+  const fields = elements.filter(item => item.field !== undefined);
+  for (const item of fields) for (const other of fields.filter(other => other !== item)) assert.ok(item.x + item.w <= other.x || other.x + other.w <= item.x || item.y + item.h <= other.y || other.y + other.h <= item.y);
+  for (const field of fields.filter(item => Number.isInteger(item.field))) assert.equal(field.value.replaceAll("\n", ""), slide.points[field.field]);
+  const originalMain = structuredClone(slide.metric);
+  assert.ok(invalidateMetricForEdit(slide, 1, "用例口径变更，结果待复核。"));
+  slide.points[1] = "用例口径变更，结果待复核。";
+  assert.deepEqual(slide.metric, originalMain);
+  assert.ok(!slideLayout(slide, 1, 6).elements.some(item => item.component?.startsWith("metric-aux:") && item.metricPoint === 1));
+  for (const aux of [{...raw.slides[1].metrics[0], label:"测试用例通过"}, {...raw.slides[1].metrics[1], unit:"秒"}, raw.slides[1].metric]) {
+    const bad = structuredClone(raw); bad.slides[1].metrics = [aux];
+    assert.equal(parseDeck(response(JSON.stringify(bad)),6).slides[1].metrics, undefined);
+  }
+  const plain = withLayoutChoice(parseDeck(response(JSON.stringify(raw)),6).slides[1],1,6,"plain");
+  assert.ok(!slideLayout(plain,1,6).elements.some(item=>item.component?.startsWith("metric-aux:")));
+});
+
+test("V2 diagnostics separate raw model fields from actual rendering and explain decline reasons", () => {
+  const raw = visualDeck();
+  const deck = parseDeck(response(JSON.stringify(raw)),6);
+  assert.match(renderingDiagnostics(deck).source, /不能认定模型/);
+  deck.generationTrace = { rawText: JSON.stringify(raw), model:"mock-only", quotaConsumed:0 };
+  const report = renderingDiagnostics(deck);
+  assert.equal(report.pages[1].auxiliaries.filter(item=>item.applied).length, 2);
+  assert.equal(report.pages[3].relationship.applied, true);
+  assert.equal(report.pages[4].relationship.applied, false);
+  assert.ok(report.pages[1].modelReturned.metrics);
+  const bad = structuredClone(raw); bad.slides[1].metrics[0].label="没有来源的标签";
+  const parsed = parseDeck(response(JSON.stringify(bad)),6); parsed.generationTrace={rawText:JSON.stringify(bad)};
+  assert.equal(renderingDiagnostics(parsed).pages[1].auxiliaries[0].valid,false);
+  assert.match(renderingDiagnostics(parsed).pages[1].auxiliaries[0].reason,/来源/);
+});
+
+test("D1.8 focus is numbered 01 and every layout preserves source numbering and complete editable text", async () => {
+  const source = knowledgeReviewNumberingDeck();
+  for (const layout of ["metrics", "summary", "risk", "decision"]) {
+    const deck = parseDeck(response(JSON.stringify(source)), 6);
+    const slide = deck.slides[5]; slide.layout = layout;
+    const before = structuredClone(slide);
+    const choices = layoutOptions(slide, 5).filter(option => option.id.startsWith("density-"));
+    assert.ok(choices.some(option => option.id === "density-focus"), layout);
+    for (const choice of choices) {
+      const changed = withLayoutChoice(slide, 5, 6, choice.id);
+      const restored = await restoreDraft(snapshotDraft("numbering", { slides: [...deck.slides.slice(0, 5), changed] }, {}));
+      const elements = slideLayout(restored.slides[5], 5, 6).elements;
+      const labels = elements.filter(item => item.pointNumber !== undefined);
+      assert.deepEqual(labels.map(item => item.value), ["01", "02", "03", "04"]);
+      assert.ok(labels.every(item => item.field === undefined));
+      const fields = elements.filter(item => Number.isInteger(item.field));
+      assert.deepEqual(fields.map(item => item.field), [0,1,2,3]);
+      for (const item of fields) {
+        assert.equal(item.value.replaceAll("\n", ""), slide.points[item.field]);
+        const label = labels.find(label => label.pointNumber === item.field);
+        assert.ok(label.x + label.w <= item.x);
+      }
+      const zip = await JSZip.loadAsync(await createPresentation(restored, PptxGenJS).write({ outputType: "nodebuffer" }));
+      const xml = await zip.file("ppt/slides/slide6.xml").async("string");
+      const text = [...xml.matchAll(/<a:t>(.*?)<\/a:t>/g)].map(item => item[1]);
+      for (const label of ["01", "02", "03", "04"]) assert.equal(text.filter(value => value === label).length, 1);
+      for (const point of slide.points) assert.ok(text.join("").includes(point));
+      assert.doesNotMatch(xml, /<p:pic>/);
+    }
+    assert.deepEqual(slide, before);
+    const single = { ...slide, points: ["唯一要点"], manualLayout: "density-focus" };
+    assert.deepEqual(slideLayout(single, 5, 6).elements.filter(item => item.pointNumber !== undefined).map(item => item.value), ["01"]);
+    const laterLead = { ...slide, lead: 2, manualLayout: "density-focus" };
+    assert.ok(!layoutOptions(laterLead, 5).some(option => option.id === "density-focus"));
+    assert.deepEqual(slideLayout(laterLead, 5, 6).elements.filter(item => Number.isInteger(item.field)).map(item => item.field), [0,1,2,3]);
+  }
+});
+
+test("D1.1 mentor real JSON retains all four stages and rejects only invalid design", () => {
+  const diagnostic = JSON.parse(readFileSync(new URL("./fixtures/mentor-real-diagnostic.json", import.meta.url)));
+  const raw = JSON.parse(diagnostic.response.content.text);
+  const deck = parseDeck(diagnostic.response, 6);
+  assert.equal(deck.slides.length, 6);
+  assert.deepEqual(deck.slides.map(slide => slide.points), raw.slides.map(slide => slide.points));
+  assert.equal(deck.slides[3].design, undefined);
+  assert.equal(deck.slides[4].design, undefined);
+  const fields = slideLayout(deck.slides[3], 3, 6).elements.filter(item => Number.isInteger(item.field));
+  assert.deepEqual(fields.map(item => item.field), [0, 1, 2, 3]);
+  assert.deepEqual(fields.map(item => item.value.replaceAll("\n", "")), raw.slides[3].points);
+  const reversed = structuredClone(raw);
+  reversed.slides[3].design = [[0,"milestone",6,6,6,6],[1,"milestone",0,6,6,6],[2,"milestone",6,0,6,6],[3,"milestone",0,0,6,6]];
+  const normalized = parseDeck(response(JSON.stringify(reversed)), 6).slides[3];
+  assert.ok(normalized.design, "geometrically valid but semantically reversed design is retained as source");
+  const ordered = slideLayout(normalized, 3, 6).elements.filter(item => Number.isInteger(item.field)).sort((a,b) => a.y - b.y || a.x - b.x);
+  assert.deepEqual(ordered.map(item => item.field), [0,1,2,3]);
+});
+
+test("D1.2 and D1.5 preserve every point across densities, choices, storage and native export", async () => {
+  const raw = densityDeck();
+  const deck = parseDeck(response(JSON.stringify(raw)), 7);
+  const signatures = new Set();
+  for (const [index, slide] of deck.slides.entries()) {
+    if (!index) continue;
+    assert.equal(slide.points.length, index);
+    const initial = slideLayout(slide, index, 7);
+    signatures.add(initial.elements.filter(item => Number.isInteger(item.field)).map(item => `${item.x}:${item.w}:${item.bold}`).join("|"));
+    for (const option of [{ id: undefined }, ...layoutOptions(slide, index)]) {
+      const changed = option.id ? withLayoutChoice(slide, index, 7, option.id) : slide;
+      deck.slides[index] = changed;
+      const restored = await restoreDraft(snapshotDraft("density", deck, {}));
+      assert.deepEqual(restored.slides[index].points, raw.slides[index].points);
+      const layout = slideLayout(restored.slides[index], index, 7);
+      const fields = layout.elements.filter(item => Number.isInteger(item.field));
+      assert.deepEqual(fields.map(item => item.field).sort((a, b) => a - b), slide.points.map((_, i) => i));
+      for (const item of fields) {
+        assert.equal(item.value.replaceAll("\n", ""), slide.points[item.field]);
+        assert.ok(item.size >= 14);
+        for (const other of fields.filter(other => other !== item)) assert.ok(item.x + item.w <= other.x || other.x + other.w <= item.x || item.y + item.h <= other.y || other.y + other.h <= item.y);
+      }
+      const zip = await JSZip.loadAsync(await createPresentation(restored, PptxGenJS).write({ outputType: "nodebuffer" }));
+      const xml = await zip.file(`ppt/slides/slide${index + 1}.xml`).async("string");
+      const native = [...xml.matchAll(/<a:t>(.*?)<\/a:t>/g)].map(item => item[1]).join("");
+      for (const point of slide.points) assert.ok(native.includes(point), `must not delete point: ${point}`);
+      assert.doesNotMatch(xml, /<p:pic>/);
+    }
+  }
+  assert.ok(signatures.size >= 3);
+  for (const count of [7, 8, 10, 12]) {
+    const extra = parseDeck(response(JSON.stringify(shortDensityDeck(count))), 6);
+    const fields = slideLayout(extra.slides[1], 1, 6).elements.filter(item => Number.isInteger(item.field));
+    assert.equal(fields.length, count);
+    assert.deepEqual(fields.map(item => item.value.replaceAll("\n", "")), extra.slides[1].points);
+  }
+});
+
+test("D1.3 capacity errors preserve original input and do not relax structural contracts", () => {
+  for (const points of [[], [null], [""]]) {
+    const raw = structuredClone(sampleDeck); raw.slides[1].points = points;
+    const copy = structuredClone(raw);
+    assert.throws(() => parseDeck(response(JSON.stringify(raw)), 6));
+    assert.deepEqual(raw, copy);
+  }
+  const raw = shortDensityDeck(); raw.slides[1].points = Array(8).fill("文".repeat(56));
+  assert.deepEqual(parseDeck(response(JSON.stringify(raw)), 6).slides[1].points, raw.slides[1].points);
+  const safe = parseDeck(response(JSON.stringify(shortDensityDeck())), 6);
+  assert.ok(densityPlans(safe.slides[1]).length);
+  const edited = { ...safe.slides[1], points: ["文".repeat(56), ...safe.slides[1].points.slice(1)] };
+  assert.equal(densityPlans(edited).length, 0);
+  assert.throws(() => slideLayout(edited, 1, 6), /原文未被截断/);
+  assert.throws(() => parseDeck(response(" ".repeat(100001) + "{}" + "a"), 6), /内容过大/);
+  const overPage = shortDensityDeck(40);
+  assert.equal(parseDeck(response(JSON.stringify(overPage)), 6).slides[1].points.length, 40);
+  const longDeck = { slides: [structuredClone(sampleDeck.slides[0]), ...Array.from({ length: 11 }, () => ({ title: "整份预算", points: Array(10).fill("文".repeat(44)) }))] };
+  assert.equal(parseDeck(response(JSON.stringify(longDeck)), 12).slides.length, 12);
+  const cover = structuredClone(sampleDeck); cover.slides[0].points.push("第二副标题");
+  assert.throws(() => parseDeck(response(JSON.stringify(cover)), 6), /要点数量/);
+  const req = makeRequest({ notes: "阶段方案", audience: "负责人", pageCount: 6 });
+  assert.equal(req.maxTokens, 6016);
+  assert.match(req.messages[0].content.text, /不要为了满足固定条数合并无关事实/);
+});
 
 const realP1Response = JSON.parse(readFileSync(new URL("./fixtures/p1-real-response.json", import.meta.url)));
+test("D1.7 writing targets are prompt guidance, not title or point rejection rules", async () => {
+  const raw = structuredClone(sampleDeck);
+  // Exact title from the failed knowledge-search response; remaining pages are simulated.
+  raw.slides[1] = { layout: "metrics", title: "索引完成率90%，测试通过率90%，准确率86%低于90%目标", points: [
+    "已接入1,200份文档，1,080份完成索引，索引完成率90%（1,080/1,200份）",
+    "执行120条搜索测试用例，108条达到预期，测试通过率90%（108/120条）",
+    "搜索结果准确率86%，低于预设的90%目标，尚未达标",
+    "测试范围覆盖产品、技术支持、运营三个部门，共45名测试用户"
+  ] };
+  raw.slides[2].points = ["文".repeat(100)];
+  const deck = parseDeck(response(JSON.stringify(raw)), 6);
+  assert.deepEqual(deck.slides.map(slide => slide.points), raw.slides.map(slide => slide.points));
+  const title = slideLayout(deck.slides[1], 1, 6).elements.find(item => item.field === "title");
+  assert.equal(title.value.replaceAll("\n", ""), raw.slides[1].title);
+  assert.ok(title.value.split("\n").length * title.size * 1.3 / 72 <= title.h);
+  const long = slideLayout(deck.slides[2], 2, 6).elements.find(item => item.field === 0);
+  assert.equal(long.value.replaceAll("\n", ""), raw.slides[2].points[0]);
+  const zip = await JSZip.loadAsync(await createPresentation(deck, PptxGenJS).write({ outputType: "nodebuffer" }));
+  const xml = await zip.file("ppt/slides/slide2.xml").async("string");
+  const native = [...xml.matchAll(/<a:t>(.*?)<\/a:t>/g)].map(item => item[1]).join("");
+  assert.ok(native.includes(raw.slides[1].title));
+});
 const migrationExcerpt = JSON.parse(readFileSync(new URL("./fixtures/p12-migration-excerpt.json", import.meta.url)));
+
+test("D1.6 role responsibilities use independent points without losing original duties", async () => {
+  const diagnostic = JSON.parse(readFileSync(new URL("./fixtures/mentor-real-diagnostic.json", import.meta.url)));
+  const raw = JSON.parse(diagnostic.response.content.text);
+  const source = raw.slides[2].points[2];
+  // Simulated corrected output, not a replacement for the saved real response.
+  raw.slides[2].points = [...raw.slides[2].points.slice(0, 2), ...source.split("；")];
+  const deck = parseDeck(response(JSON.stringify(raw)), 6);
+  const slide = deck.slides[2];
+  assert.equal(slide.points.length, 4);
+  assert.equal(slide.points.slice(2).join("；"), source);
+  const fields = slideLayout(slide, 2, 6).elements.filter(item => Number.isInteger(item.field));
+  assert.deepEqual(fields.map(item => (item.sourcePrefix ?? "") + item.value.replaceAll("\n", "")), slide.points);
+  assert.equal(fields[2].sourcePrefix, "导师：");
+  assert.equal(fields[3].sourcePrefix, "新员工：");
+  const zip = await JSZip.loadAsync(await createPresentation(deck, PptxGenJS).write({ outputType: "nodebuffer" }));
+  const xml = await zip.file("ppt/slides/slide3.xml").async("string");
+  const native = [...xml.matchAll(/<a:t>(.*?)<\/a:t>/g)].map(item => item[1]).join("");
+  for (const point of slide.points) assert.ok(native.includes(point));
+  const request = makeRequest({ notes: "角色分工", pageCount: 6, audience: "主管" });
+  assert.match(request.messages[0].content.text, /一条只对应一个角色及其职责/);
+  assert.equal(request.maxTokens, 6016);
+});
+
+test("V1.6 any body page may carry valid metrics while narrative regions retain priority", async () => {
+  const stripBreaks = value => JSON.parse(JSON.stringify(value).replace(/\\n/g, ""));
+  for (const { name, raw } of crossPageExamples()) {
+    const deck = parseDeck(response(JSON.stringify(raw)), 6);
+    const slide = deck.slides[1];
+    assert.deepEqual(slide.points, raw.slides[1].points);
+    const baseline = { ...slide }; delete baseline.metric;
+    const base = slideLayout(baseline, 1, 6);
+    const rendered = slideLayout(slide, 1, 6);
+    if (["ordinary", "ordinal"].includes(name)) {
+      assert.deepEqual(rendered, base);
+      assert.ok(!layoutOptions(slide, 1).some(option => option.id === "metric-relation"));
+    } else {
+      assert.ok(resolveMetric(slide), name);
+      assert.ok(rendered.elements.some(item => name === "summary" ? item.value === "人工复核覆盖率：100%" : item.metricPart), name);
+      assert.deepEqual(layoutOptions(slide, 1).map(item => item.id), [name === "summary" ? "metric-focus" : "metric-relation", "narrative"]);
+      for (const field of ["title", ...slide.points.map((_, i) => i).filter(i => i !== slide.metric.point)]) {
+        assert.deepEqual(stripBreaks(rendered.elements.find(item => item.field === field)), stripBreaks(base.elements.find(item => item.field === field)), `${name} preserves other narrative region ${field}`);
+      }
+      const restored = withLayoutChoice(slide, 1, 6, "narrative");
+      assert.deepEqual(stripBreaks(slideLayout(restored, 1, 6)), stripBreaks(base));
+      const fields = rendered.elements.filter(item => item.field !== undefined);
+      for (const item of fields) {
+        for (const other of fields.filter(other => other !== item)) assert.ok(item.x + item.w <= other.x || other.x + other.w <= item.x || item.y + item.h <= other.y || other.y + other.h <= item.y);
+      }
+    }
+    const zip = await JSZip.loadAsync(await createPresentation(deck, PptxGenJS).write({ outputType: "nodebuffer" }));
+    const xml = await zip.file("ppt/slides/slide2.xml").async("string");
+    const text = [...xml.matchAll(/<a:t>(.*?)<\/a:t>/g)].map(match => match[1]).join("");
+    for (const point of slide.points) {
+      // The existing decision component renders “当前建议” as a separate heading.
+      assert.ok(text.includes(point.replace(/^当前建议[：:]\s*/, "")), `${name} retains full native source`);
+    }
+    assert.doesNotMatch(xml, /<p:pic>/);
+  }
+});
+
+test("V1.7 target comparisons show a gap rather than a temporal improvement", () => {
+  const risk = crossPageExamples().find(item => item.name === "risk").raw;
+  const slide = parseDeck(response(JSON.stringify(risk)), 6).slides[1];
+  const elements = slideLayout(slide, 1, 6).elements;
+  assert.ok(elements.some(item => item.value === "低于目标 3 个百分点"));
+  assert.ok(elements.some(item => item.value === "当前 92%"));
+  assert.ok(elements.some(item => item.value === "目标 95%"));
+  assert.ok(!elements.some(item => /^(之前|之后)|约|缩短/.test(item.value ?? "")));
+  assert.ok(Math.abs(elements.find(item => item.metricPart === "bar-0").w / elements.find(item => item.metricPart === "bar-1").w - 92 / 95) < 1e-9);
+  const bad = structuredClone(risk); bad.slides[1].metric.basis = "invented";
+  assert.equal(parseDeck(response(JSON.stringify(bad)), 6).slides[1].metric, undefined);
+  const noEvidence = metricExamples()[0].raw; noEvidence.slides[1].metric.basis = "target";
+  assert.equal(parseDeck(response(JSON.stringify(noEvidence)), 6).slides[1].metric, undefined);
+  const ordinary = crossPageExamples().find(item => item.name === "ordinary").raw;
+  ordinary.slides[1].metric = { kind: "single", point: 0, label: "复核", unit: "人", values: ["3人"] };
+  assert.equal(parseDeck(response(JSON.stringify(ordinary)), 6).slides[1].metric, undefined);
+  const tight = structuredClone(risk); tight.slides[1].design = [[0, "text", 0, 0, 6, 5], [1, "text", 6, 0, 6, 5]];
+  const tightSlide = parseDeck(response(JSON.stringify(tight)), 6).slides[1];
+  assert.ok(resolveMetric(tightSlide));
+  assert.ok(!slideLayout(tightSlide, 1, 6).elements.some(item => item.metricPart));
+  const original = { ...tightSlide }; delete original.metric;
+  assert.deepEqual(slideLayout(tightSlide, 1, 6), slideLayout(original, 1, 6));
+  assert.deepEqual(tightSlide.design, original.design);
+  const stale = structuredClone(slide); const updated = "准确率91%，目标95%，需要继续复核。";
+  assert.ok(invalidateMetricForEdit(stale, 1, updated)); stale.points[1] = updated;
+  const safe = { ...stale }; delete safe.metric; delete safe.metricInvalidated; delete safe.manualLayout;
+  assert.deepEqual(JSON.parse(JSON.stringify(slideLayout(stale, 1, 6)).replace(/\\n/g, "")),
+    JSON.parse(JSON.stringify(slideLayout(safe, 1, 6)).replace(/\\n/g, "")));
+});
+
+test("V1.1 optional metrics bind exact source fragments without changing old decks or facts", () => {
+  for (const { raw } of metricExamples()) {
+    const deck = parseDeck(response(JSON.stringify(raw)), 6);
+    assert.deepEqual(deck.slides.map(slide => slide.points), raw.slides.map(slide => slide.points));
+    assert.equal(deck.slides[1].metric.sourceText, raw.slides[1].points[0]);
+    assert.ok(resolveMetric(deck.slides[1]));
+  }
+  const { raw } = metricExamples()[0];
+  const original = parseDeck(response(JSON.stringify(raw)), 6);
+  for (const bad of [null, {}, { ...raw.slides[1].metric, values: ["118分钟", "11分钟"] },
+    { ...raw.slides[1].metric, label: "未提供的指标" }, { ...raw.slides[1].metric, point: 2 },
+    { ...raw.slides[1].metric, sourceText: "旧版本原文" }, { ...raw.slides[1].metric, values: [18, 11] },
+    { ...raw.slides[1].metric, kind: "chart-code" }, { ...raw.slides[1].metric, unit: "小时" }]) {
+    const changed = structuredClone(raw);
+    changed.slides[1].metric = bad;
+    const parsed = parseDeck(response(JSON.stringify(changed)), 6);
+    assert.equal(parsed.slides[1].metric, undefined);
+    assert.deepEqual(parsed.slides[1].points, original.slides[1].points);
+  }
+  assert.equal(parseMetric({ kind: "single", point: 0, label: "耗时", unit: "分钟", values: ["18分钟"] }, ["耗时118分钟。"]), undefined);
+  assert.equal(parseMetric({ kind: "single", point: 0, label: "完成", unit: "份", values: ["9007199254740991.1份"] }, ["完成9007199254740991.1份。"]), undefined);
+  assert.equal(parseMetric({ kind: "single", point: 0, label: "耗时", unit: "分钟", values: ["18分钟"] }, ["耗时- 18分钟。"]), undefined);
+  assert.equal(parseMetric({ kind: "comparison", point: 0, label: "耗时", unit: "分钟", values: ["18分钟", "18分钟"] }, ["耗时18分钟。"]), undefined);
+  const without = structuredClone(raw); delete without.slides[1].metric;
+  assert.deepEqual(parseDeck(response(JSON.stringify(without)), 6), parseDeck(realP1Response, 6));
+});
+
+test("V1.2 comparisons use a shared scale and handle zero baselines and mixed units safely", () => {
+  for (const [example, before, after, change] of [[metricExamples()[0], 18, 11, "缩短约 39%"], [metricExamples()[1], 8, 2, "缩短约 75%"]]) {
+    const slide = parseDeck(response(JSON.stringify(example.raw)), 6).slides[1];
+    const elements = slideLayout(slide, 1, 6).elements;
+    const first = elements.find(item => item.metricPart === "bar-0");
+    const second = elements.find(item => item.metricPart === "bar-1");
+    assert.ok(Math.abs(first.w / second.w - before / after) < 1e-9);
+    assert.ok(elements.some(item => item.value === change));
+    assert.ok(elements.some(item => item.value === `${before} → ${after} 分钟`));
+  }
+  const zero = edgeMetricDeck("耗时从0分钟变为2分钟。", { kind: "comparison", point: 0, label: "耗时", unit: "分钟", values: ["0分钟", "2分钟"] });
+  const zeroElements = slideLayout(parseDeck(response(JSON.stringify(zero)), 6).slides[1], 1, 6).elements;
+  assert.ok(zeroElements.some(item => item.value === "基线为 0，不计算相对变化"));
+  assert.ok(!zeroElements.some(item => item.metricPart === "bar-0"));
+  assert.ok(!JSON.stringify(zeroElements).match(/NaN|Infinity/));
+  const small = edgeMetricDeck("耗时从1000分钟变为999分钟。", { kind: "comparison", point: 0, label: "耗时", unit: "分钟", values: ["1000分钟", "999分钟"] });
+  assert.ok(slideLayout(parseDeck(response(JSON.stringify(small)), 6).slides[1], 1, 6).elements.some(item => item.value === "缩短约 0.1%"));
+  for (const values of [["0分钟", "2小时"], ["-1分钟", "2分钟"], ["NaN分钟", "2分钟"], ["Infinity分钟", "2分钟"]]) {
+    const bad = edgeMetricDeck("耗时从0分钟变为2小时。", { ...zero.slides[1].metric, values });
+    assert.equal(parseDeck(response(JSON.stringify(bad)), 6).slides[1].metric, undefined);
+  }
+});
+
+test("V1.3 completion rates agree with counts, do not turn arbitrary percentages into progress", () => {
+  const slide = parseDeck(response(JSON.stringify(metricExamples()[2].raw)), 6).slides[1];
+  const elements = slideLayout(slide, 1, 6).elements;
+  assert.ok(elements.some(item => item.value === "9,600 / 12,000 份"));
+  assert.ok(elements.some(item => item.value === "完成率 80%"));
+  assert.ok(Math.abs(elements.find(item => item.metricPart === "progress-fill").w / elements.find(item => item.metricPart === "progress-track").w - 0.8) < 1e-9);
+  const badRate = { ...slide.metric, rate: "99.2%" };
+  assert.equal(parseMetric(badRate, slide.points), undefined);
+  assert.equal(parseMetric({ kind: "completion", point: 0, label: "完成", unit: "份", values: ["9份", "10份"], rate: "80%" }, ["完成9份，总量10份，完成率80%。"]), undefined);
+  assert.ok(parseMetric({ kind: "completion", point: 0, label: "完成", unit: "份", values: ["1.235份", "10份"], rate: "12.4%" }, ["完成1.235份，总量10份，完成率12.4%。"]));
+  const { rate: omitted, ...withoutRate } = slide.metric;
+  assert.equal(parseMetric(withoutRate, slide.points), undefined);
+  assert.equal(parseMetric({ ...slide.metric, rate: undefined }, slide.points), undefined);
+  assert.equal(parseMetric({ kind: "completion", point: 0, label: "完成", unit: "份", values: ["0份", "0份"] }, ["完成0份，计划0份。"]), undefined);
+  const over = edgeMetricDeck("已完成15份，计划12份，完成率125%。", { kind: "completion", point: 0, label: "已完成", unit: "份", values: ["15份", "12份"], rate: "125%" });
+  const overElements = slideLayout(parseDeck(response(JSON.stringify(over)), 6).slides[1], 1, 6).elements;
+  assert.ok(overElements.some(item => item.value === "完成率 125%"));
+  assert.ok(overElements.some(item => item.value === "超出总量 3 份"));
+  assert.equal(overElements.find(item => item.metricPart === "progress-fill").w, overElements.find(item => item.metricPart === "progress-track").w);
+  const single = edgeMetricDeck("完成率80%。", { kind: "single", point: 0, label: "完成率", unit: "%", values: ["80%"] });
+  const singleSlide = parseDeck(response(JSON.stringify(single)), 6).slides[1];
+  assert.ok(resolveMetric(singleSlide));
+  assert.ok(!slideLayout(singleSlide, 1, 6).elements.some(item => item.metricPart));
+  assert.equal(parseMetric({ ...single.slides[1].metric, kind: "completion", values: ["80%", "80%"] }, ["完成率80%，目标80%。"]), undefined);
+});
+
+test("V1.4 edits invalidate source-bound metrics irreversibly across layout undo and saved history", async () => {
+  const deck = parseDeck(response(JSON.stringify(metricExamples()[0].raw)), 6);
+  const slide = deck.slides[1];
+  assert.equal(invalidateMetricForEdit(slide, 1, "辅助证据修改"), false);
+  assert.equal(invalidateMetricForEdit(slide, 0, slide.points[0]), false);
+  assert.ok(resolveMetric(slide));
+  const newText = "已改为仅统计工作日，首次响应改为12分钟。";
+  assert.equal(invalidateMetricForEdit(slide, 0, newText), true);
+  slide.points[0] = newText;
+  assert.equal(slide.metric, undefined);
+  assert.ok(metricIsStale(slide));
+  for (const manualLayout of [undefined, "metric-relation", "metric-focus", "metric-cards", "plain"]) {
+    slide.manualLayout = manualLayout;
+    const elements = slideLayout(slide, 1, 6).elements;
+    assert.ok(!elements.some(item => item.metricPart || /39%|18 → 11/.test(item.value ?? "")));
+    assert.ok(elements.some(item => item.field === 0 && item.value.replaceAll("\n", "") === newText));
+  }
+  assert.equal((await restoreDraft(snapshotDraft("invalidated", deck, {}))).slides[1].metricInvalidated, true);
+  const stale = parseDeck(response(JSON.stringify(metricExamples()[0].raw)), 6).slides[1];
+  stale.points[0] = newText;
+  assert.equal(resolveMetric(stale), undefined);
+  assert.ok(!slideLayout(stale, 1, 6).elements.some(item => item.metricPart));
+});
+
+test("V1.5 relation choices export native proportional shapes and preserve every point", async () => {
+  for (const { raw } of metricExamples()) {
+    const deck = parseDeck(response(JSON.stringify(raw)), 6);
+    const original = structuredClone(deck.slides[1]);
+    assert.deepEqual(layoutOptions(original, 1).map(item => item.id), ["metric-relation", "metric-cards", "plain"]);
+    for (const choice of layoutOptions(original, 1)) {
+      deck.slides[1] = withLayoutChoice(original, 1, 6, choice.id);
+      assert.deepEqual(deck.slides[1].points, original.points);
+      const layout = slideLayout(deck.slides[1], 1, 6);
+      const zip = await JSZip.loadAsync(await createPresentation(deck, PptxGenJS).write({ outputType: "nodebuffer" }));
+      const xml = await zip.file("ppt/slides/slide2.xml").async("string");
+      const native = [...xml.matchAll(/<a:t>(.*?)<\/a:t>/g)].map(item => item[1]).join("");
+      for (const point of original.points) assert.ok(native.includes(point), point);
+      for (const shape of layout.elements.filter(item => item.metricPart)) {
+        assert.ok(xml.includes(`cx="${Math.round(shape.w * 914400)}"`));
+      }
+      assert.match(xml, /<p:sp>/);
+      assert.doesNotMatch(xml, /<p:pic>/);
+    }
+  }
+});
 
 test("P2.1 lists compatible local choices and preserves content and original design", () => {
   const metrics = parseDeck(realP1Response, 6).slides[1];
   const original = structuredClone(metrics);
   assert.deepEqual(layoutOptions(metrics, 1).map(item => item.id), ["metric-focus", "metric-cards", "plain"]);
   assert.deepEqual(layoutOptions(metrics, 0), []);
-  for (const layout of ["risk", "decision", "progress", "actions"]) assert.deepEqual(layoutOptions({ ...metrics, layout }, 1), []);
+  for (const layout of ["risk", "decision", "progress", "actions"]) {
+    const slide = { ...metrics, layout };
+    for (const choice of layoutOptions(slide, 1)) assert.deepEqual(withLayoutChoice(slide, 1, 6, choice.id).points, metrics.points);
+  }
   for (const choice of layoutOptions(metrics, 1)) {
     const result = withLayoutChoice(metrics, 1, 6, choice.id);
     assert.equal(result.points, metrics.points);
@@ -111,7 +551,7 @@ test("P1.2 explicit metric grammar preserves migration scope and falls back on a
   assert.doesNotMatch(xml, /<p:pic>/);
   const prompt = makeRequest({ notes: "", audience: "", pageCount: 6 });
   assert.match(prompt.messages[0].content.text, /主指标单独写成一条要点/);
-  assert.equal(prompt.maxTokens, 1800);
+  assert.equal(prompt.maxTokens, 6016);
 });
 
 const response = (text, stopReason = "endTurn") => ({ content: { text }, stopReason });
@@ -145,10 +585,11 @@ test("P1.1 keeps strict cover contracts and permits no guesses about unlabelled 
     assert.throws(() => parseDeck(response(JSON.stringify(deck)), 6), /第 1 页的要点数量有误/);
   }
   const prompt = makeRequest({ notes: "", audience: "负责人", pageCount: 6 });
-  assert.equal(prompt.maxTokens, 1800);
+  assert.equal(prompt.maxTokens, 6016);
   const text = prompt.messages[0].content.text;
   assert.match(text, /points 必须是恰好包含一个非空字符串的数组/);
-  assert.match(text, /正文页 points 必须是 1–3 个非空字符串的数组/);
+  assert.match(text, /正文页 points 必须是非空字符串数组/);
+  assert.doesNotMatch(text, /正文页 points 必须是 1–3/);
   assert.match(text, /资料未证明的因果关系不得写为事实/);
   const raw = JSON.parse(realP1Response.content.text);
   raw.slides[5].points[1] = "优先核对迁移条件。";
@@ -223,13 +664,13 @@ test("M2.1 rejects truncated, filtered, malformed or incorrectly sized decks", (
   assert.throws(() => parseDeck(response(JSON.stringify(sampleDeck)), 12), /12 页/);
   const invalid = structuredClone(sampleDeck);
   invalid.slides[3].points[0] = "字".repeat(57);
-  assert.throws(() => parseDeck(response(JSON.stringify(invalid))), /第 4 页/);
+  assert.equal(parseDeck(response(JSON.stringify(invalid))).slides[3].points[0], invalid.slides[3].points[0]);
 });
 
 test("M1.1 and M2.2 use one bounded request with text, document and image", () => {
   const request = makeRequest({ notes: sampleNotes, audience: " 项目负责人 ", pageCount: 6 });
   assert.equal(request.messages.length, 1);
-  assert.equal(request.maxTokens, 1800);
+  assert.equal(request.maxTokens, 6016);
   assert.equal(request.thinking, false);
   const [, input] = request.messages[0].content.text.split(/\n(?=\{"audience":)/);
   assert.deepEqual(JSON.parse(input), { audience: "项目负责人", notes: sampleNotes, documents: [] });
@@ -237,8 +678,8 @@ test("M1.1 and M2.2 use one bounded request with text, document and image", () =
   const images = [{ type: "image", data: "AAAA", mimeType: "image/png" }];
   const mixed = makeRequest({ notes: "", audience: "", pageCount: 12, documents, images });
   assert.equal(mixed.messages.length, 1);
-  assert.equal(mixed.maxTokens, 7200);
-  assert.equal(makeRequest({ notes: "", audience: "", pageCount: 5, documents, images }).maxTokens, 3000);
+  assert.equal(mixed.maxTokens, 8192);
+  assert.equal(makeRequest({ notes: "", audience: "", pageCount: 5, documents, images }).maxTokens, 6208);
   assert.equal(mixed.thinking, false);
   assert.match(mixed.messages[0].content[0].text, /恰好 12 页/);
   assert.match(mixed.messages[0].content[0].text, /"项目组"/);
@@ -246,7 +687,7 @@ test("M1.1 and M2.2 use one bounded request with text, document and image", () =
   assert.match(mixed.messages[0].content[0].text, /metrics 指标/);
   assert.match(mixed.messages[0].content[0].text, /正文标题写可核对的结论/);
   assert.deepEqual(mixed.messages[0].content[1], images[0]);
-  assert.ok(mixed.modelPreferences);
+  assert.equal(mixed.modelPreferences, undefined);
 });
 
 test("M2.4 renders distinct semantic layouts, preserves source metrics and falls back for unknown layouts", async () => {
@@ -338,7 +779,7 @@ test("M1.6 and M2.5 send style and optional instructions in one bounded request"
     style: { theme: "technology", accent: "a837e0" }
   });
   assert.equal(request.messages.length, 1);
-  assert.equal(request.maxTokens, 1500);
+  assert.equal(request.maxTokens, 5696);
   assert.match(request.messages[0].content.text, /恰好 5 页/);
   assert.match(request.messages[0].content.text, /"instructions":"重点讲风险和下一步"/);
   assert.match(request.messages[0].content.text, /保持资料中的事实/);
@@ -429,6 +870,6 @@ test("M4.2 exports boundary-length titles and points using native text", async (
   const binary = await createPresentation(deck, PptxGenJS).write({ outputType: "nodebuffer" });
   const pptx = await JSZip.loadAsync(binary);
   const xml = await pptx.file("ppt/slides/slide2.xml").async("string");
-  assert.match(xml, new RegExp(`<a:t>${deck.slides[1].title}</a:t>`));
+  assert.ok([...xml.matchAll(/<a:t>(.*?)<\/a:t>/g)].map(item=>item[1]).join("").includes(deck.slides[1].title));
   assert.equal([...xml.matchAll(new RegExp(`<a:t>${deck.slides[1].points[0]}</a:t>`, "g"))].length, 3);
 });

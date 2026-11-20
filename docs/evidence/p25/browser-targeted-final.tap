@@ -1,0 +1,52 @@
+TAP version 13
+# Subtest: P2.5 preview and cancel are isolated; confirmation, undo, P2 and durable reset preserve edited prose and pictures
+ok 1 - P2.5 preview and cancel are isolated; confirmation, undo, P2 and durable reset preserve edited prose and pictures
+  ---
+  duration_ms: 3156.8849
+  type: 'test'
+  ...
+# Subtest: P2.5 invalid, identical and failed candidates leave the draft untouched and never retry
+ok 2 - P2.5 invalid, identical and failed candidates leave the draft untouched and never retry
+  ---
+  duration_ms: 1115.1435
+  type: 'test'
+  ...
+# Subtest: P2.5 cancellation discards a late response and a changed style invalidates the preview
+ok 3 - P2.5 cancellation discards a late response and a changed style invalidates the preview
+  ---
+  duration_ms: 940.0521
+  type: 'test'
+  ...
+# Subtest: P2.5 source-edited metrics may be redesigned as text without reviving stale charts
+ok 4 - P2.5 source-edited metrics may be redesigned as text without reviving stale charts
+  ---
+  duration_ms: 899.4576
+  type: 'test'
+  ...
+# Subtest: V1 editing the source rebuilds safely, preserves pictures and cannot revive stale calculations
+ok 5 - V1 editing the source rebuilds safely, preserves pictures and cannot revive stale calculations
+  ---
+  duration_ms: 1483.1754
+  type: 'test'
+  ...
+# Subtest: V1 non-metrics source edits disable the component while preserving the main risk
+ok 6 - V1 non-metrics source edits disable the component while preserving the main risk
+  ---
+  duration_ms: 924.8609
+  type: 'test'
+  ...
+# Subtest: D1.8 focus and P2 keep continuous body numbering across four semantics without Anna
+ok 7 - D1.8 focus and P2 keep continuous body numbering across four semantics without Anna
+  ---
+  duration_ms: 2430.2434
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 11947.7494

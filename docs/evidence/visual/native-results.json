@@ -1,0 +1,18 @@
+[
+  {
+    "textObjects": 70,
+    "pages": 6,
+    "shapeEditable": true,
+    "issues": [],
+    "file": "visual-relations",
+    "textEditable": true
+  },
+  {
+    "textObjects": 77,
+    "pages": 6,
+    "shapeEditable": true,
+    "issues": [],
+    "file": "visual-long-relations",
+    "textEditable": true
+  }
+]

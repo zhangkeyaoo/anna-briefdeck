@@ -1,0 +1,356 @@
+
+> anna-briefdeck@0.1.0 test
+> node --test test/deck.test.mjs test/compatibility.test.mjs test/redesign.test.mjs test/redesign-operation.test.mjs test/generation-operation.test.mjs
+
+TAP version 13
+# Subtest: C1 strict equivalent metric expressions accept sourced labels, percentage glyphs and optional nulls
+ok 1 - C1 strict equivalent metric expressions accept sourced labels, percentage glyphs and optional nulls
+  ---
+  duration_ms: 8.1295
+  type: 'test'
+  ...
+# Subtest: C2 explicit consecutive steps may have a separate trailing note, never a connected extra node
+ok 2 - C2 explicit consecutive steps may have a separate trailing note, never a connected extra node
+  ---
+  duration_ms: 8.3224
+  type: 'test'
+  ...
+# Subtest: C3 real replay keeps all text through layout choices, edits, history and native export; risk and roles unchanged
+ok 3 - C3 real replay keeps all text through layout choices, edits, history and native export; risk and roles unchanged
+  ---
+  duration_ms: 111.0591
+  type: 'test'
+  ...
+# Subtest: V2 relationships express explicit roles and ordered steps, preserve full native source and decline guesses
+ok 4 - V2 relationships express explicit roles and ordered steps, preserve full native source and decline guesses
+  ---
+  duration_ms: 209.2273
+  type: 'test'
+  ...
+# Subtest: V2 main and auxiliary metrics require exact provenance, retain priority, and expire after edits
+ok 5 - V2 main and auxiliary metrics require exact provenance, retain priority, and expire after edits
+  ---
+  duration_ms: 15.9721
+  type: 'test'
+  ...
+# Subtest: V2 diagnostics separate raw model fields from actual rendering and explain decline reasons
+ok 6 - V2 diagnostics separate raw model fields from actual rendering and explain decline reasons
+  ---
+  duration_ms: 18.2489
+  type: 'test'
+  ...
+# Subtest: D1.8 focus is numbered 01 and every layout preserves source numbering and complete editable text
+ok 7 - D1.8 focus is numbered 01 and every layout preserves source numbering and complete editable text
+  ---
+  duration_ms: 136.2794
+  type: 'test'
+  ...
+# Subtest: D1.1 mentor real JSON retains all four stages and rejects only invalid design
+ok 8 - D1.1 mentor real JSON retains all four stages and rejects only invalid design
+  ---
+  duration_ms: 3.8391
+  type: 'test'
+  ...
+# Subtest: D1.2 and D1.5 preserve every point across densities, choices, storage and native export
+ok 9 - D1.2 and D1.5 preserve every point across densities, choices, storage and native export
+  ---
+  duration_ms: 275.3898
+  type: 'test'
+  ...
+# Subtest: D1.3 capacity errors preserve original input and do not relax structural contracts
+ok 10 - D1.3 capacity errors preserve original input and do not relax structural contracts
+  ---
+  duration_ms: 4.6774
+  type: 'test'
+  ...
+# Subtest: D1.7 writing targets are prompt guidance, not title or point rejection rules
+ok 11 - D1.7 writing targets are prompt guidance, not title or point rejection rules
+  ---
+  duration_ms: 8.6333
+  type: 'test'
+  ...
+# Subtest: D1.6 role responsibilities use independent points without losing original duties
+ok 12 - D1.6 role responsibilities use independent points without losing original duties
+  ---
+  duration_ms: 7.8173
+  type: 'test'
+  ...
+# Subtest: V1.6 any body page may carry valid metrics while narrative regions retain priority
+ok 13 - V1.6 any body page may carry valid metrics while narrative regions retain priority
+  ---
+  duration_ms: 49.1586
+  type: 'test'
+  ...
+# Subtest: V1.7 target comparisons show a gap rather than a temporal improvement
+ok 14 - V1.7 target comparisons show a gap rather than a temporal improvement
+  ---
+  duration_ms: 3.5347
+  type: 'test'
+  ...
+# Subtest: V1.1 optional metrics bind exact source fragments without changing old decks or facts
+ok 15 - V1.1 optional metrics bind exact source fragments without changing old decks or facts
+  ---
+  duration_ms: 2.48
+  type: 'test'
+  ...
+# Subtest: V1.2 comparisons use a shared scale and handle zero baselines and mixed units safely
+ok 16 - V1.2 comparisons use a shared scale and handle zero baselines and mixed units safely
+  ---
+  duration_ms: 4.778
+  type: 'test'
+  ...
+# Subtest: V1.3 completion rates agree with counts, do not turn arbitrary percentages into progress
+ok 17 - V1.3 completion rates agree with counts, do not turn arbitrary percentages into progress
+  ---
+  duration_ms: 3.2236
+  type: 'test'
+  ...
+# Subtest: V1.4 edits invalidate source-bound metrics irreversibly across layout undo and saved history
+ok 18 - V1.4 edits invalidate source-bound metrics irreversibly across layout undo and saved history
+  ---
+  duration_ms: 1.9061
+  type: 'test'
+  ...
+# Subtest: V1.5 relation choices export native proportional shapes and preserve every point
+ok 19 - V1.5 relation choices export native proportional shapes and preserve every point
+  ---
+  duration_ms: 83.3115
+  type: 'test'
+  ...
+# Subtest: P2.1 lists compatible local choices and preserves content and original design
+ok 20 - P2.1 lists compatible local choices and preserves content and original design
+  ---
+  duration_ms: 10.7817
+  type: 'test'
+  ...
+# Subtest: P2.3–P2.4 local layout survives history and exports shared native geometry
+ok 21 - P2.3–P2.4 local layout survives history and exports shared native geometry
+  ---
+  duration_ms: 56.8127
+  type: 'test'
+  ...
+# Subtest: P1.2 explicit metric grammar preserves migration scope and falls back on ambiguous comparisons
+ok 22 - P1.2 explicit metric grammar preserves migration scope and falls back on ambiguous comparisons
+  ---
+  duration_ms: 9.5214
+  type: 'test'
+  ...
+# Subtest: P1.1 replays the real six-page response and preserves every original point
+ok 23 - P1.1 replays the real six-page response and preserves every original point
+  ---
+  duration_ms: 9.9683
+  type: 'test'
+  ...
+# Subtest: P1.1 keeps strict cover contracts and permits no guesses about unlabelled decisions
+ok 24 - P1.1 keeps strict cover contracts and permits no guesses about unlabelled decisions
+  ---
+  duration_ms: 0.9964
+  type: 'test'
+  ...
+# Subtest: P1 moves the emphasis with Anna's lead and keeps original facts and legacy layouts
+ok 25 - P1 moves the emphasis with Anna's lead and keeps original facts and legacy layouts
+  ---
+  duration_ms: 10.1277
+  type: 'test'
+  ...
+# Subtest: M1.3 validates integer page counts from 4 through 12
+ok 26 - M1.3 validates integer page counts from 4 through 12
+  ---
+  duration_ms: 0.3232
+  type: 'test'
+  ...
+# Subtest: M2.1 accepts plain and fenced model JSON with the chosen length
+ok 27 - M2.1 accepts plain and fenced model JSON with the chosen length
+  ---
+  duration_ms: 0.8707
+  type: 'test'
+  ...
+# Subtest: M2.1 rejects truncated, filtered, malformed or incorrectly sized decks
+ok 28 - M2.1 rejects truncated, filtered, malformed or incorrectly sized decks
+  ---
+  duration_ms: 0.631
+  type: 'test'
+  ...
+# Subtest: M1.1 and M2.2 use one bounded request with text, document and image
+ok 29 - M1.1 and M2.2 use one bounded request with text, document and image
+  ---
+  duration_ms: 0.3938
+  type: 'test'
+  ...
+# Subtest: M2.4 renders distinct semantic layouts, preserves source metrics and falls back for unknown layouts
+ok 30 - M2.4 renders distinct semantic layouts, preserves source metrics and falls back for unknown layouts
+  ---
+  duration_ms: 8.2465
+  type: 'test'
+  ...
+# Subtest: M5.1–M5.2 validate flexible geometry and export it as native text and shapes
+ok 31 - M5.1–M5.2 validate flexible geometry and export it as native text and shapes
+  ---
+  duration_ms: 11.6914
+  type: 'test'
+  ...
+# Subtest: M1.6 and M2.5 send style and optional instructions in one bounded request
+ok 32 - M1.6 and M2.5 send style and optional instructions in one bounded request
+  ---
+  duration_ms: 6.9053
+  type: 'test'
+  ...
+# Subtest: M5.3 keeps text contrast on large areas derived from custom colors
+ok 33 - M5.3 keeps text contrast on large areas derived from custom colors
+  ---
+  duration_ms: 1.1113
+  type: 'test'
+  ...
+# Subtest: M3.4 keeps text layout while bounding and scaling independent pictures
+ok 34 - M3.4 keeps text layout while bounding and scaling independent pictures
+  ---
+  duration_ms: 1.3068
+  type: 'test'
+  ...
+# Subtest: M4.1 writes edited native text and correct page counts for 4, 6 and 12 slides
+ok 35 - M4.1 writes edited native text and correct page counts for 4, 6 and 12 slides
+  ---
+  duration_ms: 30.3813
+  type: 'test'
+  ...
+# Subtest: M4.2 exports boundary-length titles and points using native text
+ok 36 - M4.2 exports boundary-length titles and points using native text
+  ---
+  duration_ms: 5.3972
+  type: 'test'
+  ...
+# Subtest: whole-deck budgets reserve reasoning capacity, never select a model, and remain within SDK streaming ceiling
+ok 37 - whole-deck budgets reserve reasoning capacity, never select a model, and remain within SDK streaming ceiling
+  ---
+  duration_ms: 1.89
+  type: 'test'
+  ...
+# Subtest: forced reasoning truncation retries once with larger budget; receipts sum before formatting
+ok 38 - forced reasoning truncation retries once with larger budget; receipts sum before formatting
+  ---
+  duration_ms: 10.4544
+  type: 'test'
+  ...
+# Subtest: first success makes one call, repeated truncation stops at two, hard caps and unrelated errors never retry
+ok 39 - first success makes one call, repeated truncation stops at two, hard caps and unrelated errors never retry
+  ---
+  duration_ms: 1.3622
+  type: 'test'
+  ...
+# Subtest: cancellation and late/expired responses retain receipt but cannot retry or produce a deck
+ok 40 - cancellation and late/expired responses retain receipt but cannot retry or produce a deck
+  ---
+  duration_ms: 0.6841
+  type: 'test'
+  ...
+# Subtest: public credits always round only the final total, preserving exact internal receipts
+ok 41 - public credits always round only the final total, preserving exact internal receipts
+  ---
+  duration_ms: 0.3163
+  type: 'test'
+  ...
+# Subtest: P2.5 controlled correction stops on success 1
+ok 42 - P2.5 controlled correction stops on success 1
+  ---
+  duration_ms: 37.6761
+  type: 'test'
+  ...
+# Subtest: P2.5 controlled correction stops on success 2
+ok 43 - P2.5 controlled correction stops on success 2
+  ---
+  duration_ms: 14.6662
+  type: 'test'
+  ...
+# Subtest: P2.5 controlled correction stops on success 3
+ok 44 - P2.5 controlled correction stops on success 3
+  ---
+  duration_ms: 11.6893
+  type: 'test'
+  ...
+# Subtest: P2.5 controlled correction stops on success 4
+ok 45 - P2.5 controlled correction stops on success 4
+  ---
+  duration_ms: 8.2796
+  type: 'test'
+  ...
+# Subtest: P2.5 four failed validations stop, while protected fields and request errors stop early
+ok 46 - P2.5 four failed validations stop, while protected fields and request errors stop early
+  ---
+  duration_ms: 22.5653
+  type: 'test'
+  ...
+# Subtest: P2.5 cancellation and expiry collect the late receipt without starting a repair
+ok 47 - P2.5 cancellation and expiry collect the late receipt without starting a repair
+  ---
+  duration_ms: 31.6692
+  type: 'test'
+  ...
+# Subtest: P2.5 impossible grid and absent alternatives stop before calling, and final free grid cannot replace the alternative policy
+ok 48 - P2.5 impossible grid and absent alternatives stop before calling, and final free grid cannot replace the alternative policy
+  ---
+  duration_ms: 34.9774
+  type: 'test'
+  ...
+# Subtest: public credits add provider decimals exactly, retain unknown receipts and never show model or tokens
+ok 49 - public credits add provider decimals exactly, retain unknown receipts and never show model or tokens
+  ---
+  duration_ms: 0.685
+  type: 'test'
+  ...
+# Subtest: P2.5 real five-point grid violates the advertised minimum height and must remain rejected
+ok 50 - P2.5 real five-point grid violates the advertised minimum height and must remain rejected
+  ---
+  duration_ms: 31.6205
+  type: 'test'
+  ...
+# Subtest: P2.5.1 request contains only the current page, safe geometry and image frames in one bounded call
+ok 51 - P2.5.1 request contains only the current page, safe geometry and image frames in one bounded call
+  ---
+  duration_ms: 13.3011
+  type: 'test'
+  ...
+# Subtest: P2.5.2 custom grid and compatible choices preserve all authoritative data and produce a different native layout
+ok 52 - P2.5.2 custom grid and compatible choices preserve all authoritative data and produce a different native layout
+  ---
+  duration_ms: 60.2624
+  type: 'test'
+  ...
+# Subtest: P2.5.2 invalid, executable, identical or incomplete designs fail without touching the original
+ok 53 - P2.5.2 invalid, executable, identical or incomplete designs fail without touching the original
+  ---
+  duration_ms: 3.7186
+  type: 'test'
+  ...
+# Subtest: P2.5.3 visual undo never restores old prose, metrics or pictures; history preserves reset and candidate
+ok 54 - P2.5.3 visual undo never restores old prose, metrics or pictures; history preserves reset and candidate
+  ---
+  duration_ms: 4.4347
+  type: 'test'
+  ...
+# Subtest: P2.5.4 new image obstruction is rejected while existing safe pictures remain unchanged
+ok 55 - P2.5.4 new image obstruction is rejected while existing safe pictures remain unchanged
+  ---
+  duration_ms: 2.1424
+  type: 'test'
+  ...
+# Subtest: P2.5 edited and invalidated metric pages still allow text-only redesign without reviving old charts
+ok 56 - P2.5 edited and invalidated metric pages still allow text-only redesign without reviving old charts
+  ---
+  duration_ms: 1.9405
+  type: 'test'
+  ...
+# Subtest: P2.5 prompt advertises only combinations accepted by the same strict validator
+ok 57 - P2.5 prompt advertises only combinations accepted by the same strict validator
+  ---
+  duration_ms: 15.9982
+  type: 'test'
+  ...
+1..57
+# tests 57
+# suites 0
+# pass 57
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1368.3746

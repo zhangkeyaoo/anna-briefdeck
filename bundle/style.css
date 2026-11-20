@@ -12,6 +12,9 @@ body { margin: 0; }
 #generation-diagnostic { font-size: 12px; overflow-wrap: anywhere; }
 #generation-diagnostic summary { cursor: pointer; }
 #diagnostic-output { white-space: pre-wrap; max-height: 240px; overflow: auto; background: #edf3eb; padding: 8px; }
+#rendering-diagnostic { font-size: 12px; overflow-wrap: anywhere; margin-block: 10px; }
+#rendering-diagnostic summary { cursor: pointer; }
+#rendering-output { white-space: pre-wrap; max-height: 260px; overflow: auto; background: #edf3eb; padding: 8px; }
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: default; opacity: .52; }
@@ -285,6 +288,13 @@ dialog {
   background: #fcfdf9;
 }
 dialog::backdrop { background: #142a24a6; }
+#redesign-controls { margin-bottom: 12px; }
+#redesign { border-radius: 18px; }
+#redesign-dialog { width: 850px; max-width: calc(100% - 24px); max-height: calc(100vh - 24px); overflow: auto; }
+#redesign-dialog h2 { margin-top: 0; }
+#redesign-dialog .slide-picture { cursor: default; }
+#redesign-dialog .dialog-actions { flex-wrap: wrap; }
+#redesign-intent { max-height: 100px; overflow: auto; overflow-wrap: anywhere; }
 dialog form { margin: 0; }
 .dialog-actions { display: flex; justify-content: end; gap: 10px; margin-top: 8px; }
 

@@ -1,9 +1,14 @@
-import { defaultPages, limits, makeRequest, parseDeck, sampleAudience, sampleDeck, sampleNotes, validPageCount } from "./deck.js";
+import { defaultPages, limits, makeRequest, sampleAudience, sampleDeck, sampleNotes, validPageCount } from "./deck.js";
 import { dimensions, layoutOptions, movePicture, pictureElement, placePicture, resizePicture, slideLayout, themePalette, withLayoutChoice } from "./layout.js";
+import { renderingDiagnostics } from "./diagnostics.js";
 import { createPresentation, fileName } from "./export.js";
 import { readSlidePicture, readSource, sourceKind, sourceLimits } from "./sources.js";
 import { annaLibrary, browserLibrary, restoreDraft, snapshotDraft } from "./library.js";
 import { primaryEvidence } from "./slide-design.js";
+import { invalidateMetricForEdit, metricIsStale } from "./metric.js";
+import { pageSignature, restoreVisual, visualSnapshot } from "./redesign.js";
+import { creditSummary, formatCredits, redesignFailure, runRedesignOperation } from "./redesign-operation.js";
+import { runGenerationOperation } from "./generation-operation.js";
 
 const find = id => document.getElementById(id);
 const form = find("brief-form");
@@ -48,14 +53,21 @@ const layoutUndo = find("layout-undo");
 const layoutReset = find("layout-reset");
 const layoutStatus = find("layout-status");
 const previousLayouts = new WeakMap();
+const redesignDialog = find("redesign-dialog");
+let redesignPending = false;
+let redesignContext;
+let lastRedesignAttempt;
 const emptyStage = stage.firstElementChild;
 const params = new URLSearchParams(location.search);
 const hosted = window.parent !== window && params.has("wid") && params.has("t");
+const developerMode = params.get("debug") === "1";
 let runtimePromise;
 let deck;
 let selected = 0;
 let selectedPicture;
 let busy = false;
+let generationContext;
+let lastGenerationOperation;
 let sources = [];
 let lastPageInput = pageCount.value;
 let customColor = "";
@@ -71,6 +83,8 @@ let deletingDraft;
 let openingDraft = false;
 let loadingLibrary = true;
 let libraryReadFailed = false;
+// Developer inspection remains available without a visible production control.
+window.briefdeckDiagnostics=()=>structuredClone({...deck?currentRenderingReport():{},generationFailure:failedGeneration,generationOperation:lastGenerationOperation});
 
 function slideStyle() {
   return { theme: theme.value, accent: customColor };
@@ -162,7 +176,7 @@ async function deleteDraft(record) {
   });
   deleteDialog.showModal();
   if (!await confirmed) return;
-  finishCurrentTextEdit();
+  if (!finishCurrentTextEdit()) return;
   deletingDraft = record.id;
   renderLibrary();
   try {
@@ -214,6 +228,8 @@ function clearCanvas() {
   pictureStatus.textContent = "";
   layoutControls.hidden = true;
   layoutControls.open = false;
+  find("metric-status").hidden = true;
+  find("density-status").hidden = true;
   updatePictureControls();
 }
 
@@ -222,7 +238,7 @@ async function openDraft(id) {
     closeLibrary();
     return;
   }
-  finishCurrentTextEdit();
+  if (!finishCurrentTextEdit()) return;
   const entry = drafts.get(id);
   openingDraft = true;
   renderLibrary();
@@ -269,31 +285,10 @@ function setStatus(message, kind = "info") {
   status.dataset.kind = kind;
 }
 
-function formatUsage(response) {
-  const consumed = response?._meta?.quotaConsumed;
-  const effectiveCap = response?._meta?.maxTokens?.effective;
-  const inputTokens = response?.usage?.inputTokens;
-  const outputTokens = response?.usage?.outputTokens;
-  const reasoningTokens = response?.usage?.reasoningTokens;
-  const details = [];
-  if (Number.isFinite(consumed)) {
-    const display = consumed > 0 && consumed < 0.01 ? "<0.01" : String(Math.round(consumed * 100) / 100);
-    details.push(`本次消耗 ${display} CU`);
-  }
-  if (typeof response?.model === "string" && response.model) details.push(`模型 ${response.model}`);
-  if (Number.isFinite(inputTokens)) details.push(`输入 ${inputTokens} tokens`);
-  if (Number.isFinite(outputTokens)) details.push(`输出 ${outputTokens} tokens`);
-  if (Number.isFinite(reasoningTokens)) details.push(`其中推理 ${reasoningTokens} tokens`);
-  if (response?._meta?.thinking?.effective?.enabled === true && !Number.isFinite(reasoningTokens)) {
-    details.push("模型启用了推理，未返回推理用量");
-  }
-  if (Number.isFinite(effectiveCap)) details.push(`输出上限 ${effectiveCap} tokens`);
-  return details.length ? details.join("，") + "。" : "";
-}
-
 function showGenerationDiagnostic(response, error, pageCount) {
   failedGeneration = {
     error: error.message, requestedPages: pageCount, recordedAt: new Date().toISOString(),
+    operation:structuredClone(lastGenerationOperation),
     response: {
       content: response.content, model: response.model, stopReason: response.stopReason, usage: response.usage,
       _meta: {
@@ -304,7 +299,7 @@ function showGenerationDiagnostic(response, error, pageCount) {
   };
   find("diagnostic-error").textContent = error.message;
   find("diagnostic-output").textContent = JSON.stringify(failedGeneration, null, 2);
-  generationDiagnostic.hidden = false;
+  generationDiagnostic.hidden = !developerMode;
   generationDiagnostic.open = false;
 }
 
@@ -314,6 +309,17 @@ find("download-diagnostic").addEventListener("click", () => {
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = "briefdeck-generation-diagnostic.json";
+  anchor.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+
+find("download-rendering-diagnostic").addEventListener("click", () => {
+  if (!deck || !finishCurrentTextEdit()) return;
+  const report = { ...currentRenderingReport(), originalModelText: deck.generationTrace?.rawText ?? null };
+  const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }));
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = "briefdeck-layout-diagnostic.json";
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
@@ -330,6 +336,7 @@ function updateLength() {
 }
 
 function renderSources() {
+  find("multi-file-hint").hidden=sources.length<3;
   sourceDetails.hidden = sources.length === 0;
   if (!sources.length) sourceDetails.open = false;
   const failed = sources.filter(source => source.state === "error").length;
@@ -409,6 +416,8 @@ function confirmReplace(message) {
 }
 
 function paintSlideElement(element, item) {
+  if (item.metricPart) element.dataset.metricPart = item.metricPart;
+  else delete element.dataset.metricPart;
   element.style.left = `${item.x / dimensions.width * 100}%`;
   element.style.top = `${item.y / dimensions.height * 100}%`;
   element.style.width = `${item.w / dimensions.width * 100}%`;
@@ -436,7 +445,7 @@ function selectPicture(picture) {
 }
 
 function removeSlidePicture(picture) {
-  finishCurrentTextEdit();
+  if (!finishCurrentTextEdit()) return;
   const slide = deck.slides[selected];
   slide.pictures = slide.pictures.filter(item => item !== picture);
   selectedPicture = undefined;
@@ -472,7 +481,7 @@ function enablePictureEditing(preview, element, picture) {
   element.addEventListener("pointerdown", event => {
     if (event.button !== 0 || event.target === remove || drag) return;
     event.preventDefault();
-    finishCurrentTextEdit();
+    if (!finishCurrentTextEdit()) return;
     element.focus({ preventScroll: true });
     selectPicture(picture);
     drag = {
@@ -518,7 +527,6 @@ function enableInlineEdit(preview, element, field, slide, index) {
     const input = document.createElement("textarea");
     input.className = "slide-editor-input";
     input.setAttribute("aria-label", `${label}编辑框`);
-    input.maxLength = title ? limits.title : limits.point;
     input.value = title ? slide.title : slide.points[field];
     const range = document.createRange();
     range.selectNodeContents(element);
@@ -533,27 +541,51 @@ function enableInlineEdit(preview, element, field, slide, index) {
     input.select();
     let finished = false;
     function finish(save, refocus = false) {
-      if (finished || !preview.isConnected || deck.slides[index] !== slide) return;
-      finished = true;
+      if (finished || !preview.isConnected || deck.slides[index] !== slide) return true;
+      let metricInvalidated = false;
       if (save) {
         const value = input.value.replace(/[\r\n\t]+/g, " ").trim();
+        const candidate = { ...slide, points: [...slide.points] };
+        if (title) candidate.title = value;
+        else candidate.points[field] = value;
+        try {
+          slideLayout(candidate, index, deck.slides.length, slideStyle());
+        } catch (error) {
+          const notice = find("density-status");
+          notice.hidden = false;
+          notice.dataset.kind = "error";
+          notice.textContent = `${error.message} 本次编辑未保存，文字仍保留在编辑框；可缩短内容或按 Esc 取消。`;
+          return false;
+        }
         if (title) {
           slide.title = value;
           pages.children[index].title = value;
         } else {
+          metricInvalidated = invalidateMetricForEdit(slide, field, value);
+          if (metricInvalidated) previousLayouts.delete(slide);
           slide.points[field] = value;
         }
       }
+      finished = true;
+      find("density-status").hidden = true;
       element.setAttribute("role", "button");
       element.setAttribute("aria-label", `编辑${label}`);
       element.tabIndex = 0;
       const next = slideLayout(slide, index, deck.slides.length, slideStyle());
-      next.elements.forEach((item, i) => paintSlideElement(preview.children[i], item));
+      const changedStructure = next.elements.some((item, i) => {
+        const node = preview.children[i];
+        const kind = item.kind === "text" ? "slide-text" : item.kind === "image" ? "slide-picture" : "slide-shape";
+        return !node?.classList.contains(kind) || (node.dataset.field ?? "") !== String(item.field ?? "");
+      });
+      if (metricInvalidated || next.elements.length !== preview.children.length || changedStructure) renderSlide();
+      else next.elements.forEach((item, i) => paintSlideElement(preview.children[i], item));
       if (save) saveCurrentDraft();
       updateLayoutControls();
-      if (refocus) element.focus({ preventScroll: true });
+      if (refocus) stage.querySelector(`[data-field="${field}"]`)?.focus({ preventScroll: true });
+      return true;
     }
-    input.addEventListener("blur", () => finish(true), { once: true });
+    input.commitEdit = () => finish(true);
+    input.addEventListener("blur", () => finish(true));
     input.addEventListener("keydown", event => {
       if (event.isComposing || !["Enter", "Escape"].includes(event.key)) return;
       event.preventDefault();
@@ -562,6 +594,12 @@ function enableInlineEdit(preview, element, field, slide, index) {
   }
   element.addEventListener("click", event => {
     if (event.target === element) start();
+  });
+  element.addEventListener("pointerdown", event => {
+    if (event.target !== element || !preview.querySelector(".slide-editor-input")) return;
+    event.preventDefault();
+    if (!finishCurrentTextEdit()) return;
+    stage.querySelector(`[data-field="${field}"]`)?.click();
   });
   element.addEventListener("keydown", event => {
     if (event.target !== element || !["Enter", " "].includes(event.key)) return;
@@ -586,29 +624,50 @@ function renderSlide() {
     const element = document.createElement("div");
     element.className = item.kind === "text" ? "slide-text" : item.kind === "image" ? "slide-picture" : "slide-shape";
     paintSlideElement(element, item);
-    if (item.field !== undefined) enableInlineEdit(preview, element, item.field, slide, selected);
+    if (item.field !== undefined) {
+      element.dataset.field = String(item.field);
+      enableInlineEdit(preview, element, item.field, slide, selected);
+    }
     if (item.kind === "image") enablePictureEditing(preview, element, item.picture);
     preview.append(element);
   }
   stage.removeAttribute("data-empty");
   stage.replaceChildren(preview);
+  const metricNotice = find("metric-status");
+  metricNotice.hidden = !metricIsStale(slide);
+  metricNotice.textContent = metricNotice.hidden ? "" : "指标来源已修改，已停用数据图并保留当前文案。请核对标题及相关文案。";
   updateLayoutControls();
 }
 
 function layoutSnapshot(slide) {
-  return { present: Object.hasOwn(slide, "manualLayout"), value: slide.manualLayout };
+  return { present: Object.hasOwn(slide, "manualLayout"), value: slide.manualLayout,
+    visual:visualSnapshot(slide), original:structuredClone(slide.redesignOriginal), trace:structuredClone(slide.redesignTrace) };
 }
 
 function restoreLayoutSnapshot(slide, snapshot) {
+  if(snapshot.visual) {
+    restoreVisual(slide,snapshot.visual);
+    for(const [key,value]of [["redesignOriginal",snapshot.original],["redesignTrace",snapshot.trace]]) {
+      if(value===undefined)delete slide[key];else slide[key]=structuredClone(value);
+    }
+    return;
+  }
   if (snapshot.present) slide.manualLayout = snapshot.value;
   else delete slide.manualLayout;
 }
 
 function updateLayoutControls() {
+  find("rendering-diagnostic").hidden = !deck || !developerMode;
+  if (deck) find("rendering-output").textContent = JSON.stringify(currentRenderingReport(), null, 2);
   const slide = deck?.slides[selected];
   const options = slide ? layoutOptions(slide, selected) : [];
-  layoutControls.hidden = options.length < 2;
+  layoutControls.hidden = options.length < 2 && !previousLayouts.has(slide) && !slide?.redesignOriginal;
   const disabled = busy || exporting || openingDraft || Boolean(deletingDraft) || pendingPictures.has(slide);
+  find("redesign-controls").hidden = !slide;
+  find("redesign").disabled = disabled || redesignPending || redesignDialog.open || !hosted || selected===0;
+  find("redesign-hint").textContent = selected===0 ? "封面为固定排版，暂不支持AI重新设计；请选择正文页。" :
+    !hosted ? "请在 Anna 中使用AI单页设计；本地预览可使用免费的更换布局。" :
+    "消耗积分 · 最多4次 · 先预览";
   find("layout-page").textContent = slide ? `第 ${selected + 1} 页` : "";
   const current = options.find(option => option.id === slide?.manualLayout);
   find("layout-current").textContent = `当前：${current?.label ?? "原有布局"}`;
@@ -623,7 +682,11 @@ function updateLayoutControls() {
     const label = document.createElement("strong");
     label.textContent = option.label;
     const description = document.createElement("span");
-    description.textContent = option.description;
+    const hints={"ai-design":"本页已确认方案","metric-focus":"突出关键指标","metric-relation":"展示数值关系","metric-cards":"各项并列呈现",
+      "summary-focus":"突出第一条","summary-cards":"各项并列呈现","plain":"按顺序完整呈现","density-list":"按顺序完整呈现",
+      "density-grid":"分栏呈现要点","density-focus":"突出第01条","relation-roles":"角色与职责对照","relation-sequence":"按步骤顺序展开",
+      "narrative":"保留原有叙事"};
+    description.textContent = hints[option.id]??option.description;
     button.append(label, description);
     // Commit an active canvas editor inside the click transaction before rebuilding options.
     button.addEventListener("pointerdown", event => event.preventDefault());
@@ -631,13 +694,13 @@ function updateLayoutControls() {
     return button;
   }));
   layoutUndo.disabled = disabled || !slide || !previousLayouts.has(slide);
-  layoutReset.disabled = disabled || !slide || !Object.hasOwn(slide, "manualLayout");
+  layoutReset.disabled = disabled || !slide || !Object.hasOwn(slide, "manualLayout") && !slide.redesignOriginal;
 }
 
 function changeLayout(action, choice) {
   const slide = deck?.slides[selected];
   if (!slide || busy || exporting || openingDraft || deletingDraft || pendingPictures.has(slide)) return;
-  finishCurrentTextEdit();
+  if (!finishCurrentTextEdit()) return;
   const before = layoutSnapshot(slide);
   const previous = previousLayouts.get(slide);
   try {
@@ -649,9 +712,14 @@ function changeLayout(action, choice) {
       if (!previous) return;
       restoreLayoutSnapshot(slide, previous);
     } else {
-      delete slide.manualLayout;
+      if(slide.redesignOriginal) {
+        restoreVisual(slide,slide.redesignOriginal);
+        delete slide.redesignOriginal;
+        delete slide.redesignTrace;
+      } else delete slide.manualLayout;
     }
     renderSlide();
+    find("redesign-status").hidden=true;
     if (action === "undo") previousLayouts.delete(slide);
     else previousLayouts.set(slide, before);
     layoutStatus.textContent = action === "undo" ? "已撤销上次布局切换。" : action === "reset" ? "已恢复本页原有布局。" : "已更换本页布局。";
@@ -672,6 +740,187 @@ function changeLayout(action, choice) {
 layoutUndo.addEventListener("click", () => changeLayout("undo"));
 layoutReset.addEventListener("click", () => changeLayout("reset"));
 
+function redesignMatches(context) {
+  return deck===context.deck && selected===context.index && deck.slides[selected]===context.slide &&
+    pageSignature(context.slide,slideStyle())===context.signature;
+}
+
+function currentRenderingReport() {
+  return { latestSinglePageAttempt:lastRedesignAttempt?.deck===deck?lastRedesignAttempt.data:undefined,
+    ...renderingDiagnostics(deck,slideStyle()) };
+}
+
+function recordRedesignAttempt(context,status,extra={}) {
+  context.attempt??={page:context.index+1,recordedAt:new Date().toISOString(),requestSent:false};
+  Object.assign(context.attempt,{status},extra);
+  lastRedesignAttempt={deck:context.deck,data:context.attempt};
+}
+
+function redesignMessage(message,kind="info") {
+  const element=find("redesign-status");
+  element.textContent=message; element.dataset.kind=kind; element.hidden=false;
+}
+
+function cancelRedesign() {
+  const context=redesignContext;
+  if(context) {
+    context.cancelled=true;
+    if(!["failed","expired"].includes(context.operation?.status)) {
+      if(context.operation) {
+        context.operation.status="cancelled";
+        const pending=context.operation.attempts?.at(-1);
+        if(pending && pending.status!=="failed")pending.status="cancelled";
+      }
+      redesignMessage(`已取消第 ${context.index+1} 页设计，原稿未更改。${context.usage??"未发起设计调用。"}`);
+    }
+  }
+  redesignContext=undefined;
+  if(redesignDialog.open)redesignDialog.close();
+  updateLayoutControls();
+}
+
+find("redesign").addEventListener("pointerdown",event=>event.preventDefault());
+find("redesign").addEventListener("click",()=>{
+  if(!deck || selected===0 || !hosted || busy || exporting || redesignPending || redesignDialog.open || !finishCurrentTextEdit())return;
+  const slide=deck.slides[selected];
+  if(pendingPictures.has(slide))return;
+  redesignContext={deck,slide,index:selected,style:slideStyle(),signature:pageSignature(slide,slideStyle()),cancelled:false};
+  find("redesign-title").textContent=`AI 重新设计第 ${selected+1} 页`;
+  find("redesign-confirm").hidden=false;
+  find("redesign-request").hidden=false;
+  find("redesign-request").disabled=false;
+  find("redesign-apply").hidden=true;
+  find("redesign-apply").disabled=false;
+  find("redesign-cancel").textContent="取消";
+  find("redesign-preview").hidden=true;
+  find("redesign-preview").replaceChildren();
+  find("redesign-intent").hidden=true;
+  find("redesign-progress").textContent="只发送当前页内容与设计约束；取消后不会修改原稿。";
+  find("redesign-progress").dataset.kind="info";
+  find("redesign-detail").hidden=true;
+  find("redesign-detail").open=false;
+  redesignDialog.showModal();
+  updateLayoutControls();
+});
+find("redesign-cancel").addEventListener("click",cancelRedesign);
+redesignDialog.addEventListener("cancel",event=>{event.preventDefault();cancelRedesign();});
+redesignDialog.addEventListener("close",()=>{if(redesignContext)cancelRedesign();});
+
+function showRedesignPreview(candidate,context) {
+  const layout=slideLayout(candidate,context.index,context.deck.slides.length,context.style);
+  const preview=document.createElement("div");
+  preview.className="slide"; preview.style.backgroundColor="#"+layout.background;
+  for(const original of layout.elements) {
+    let item=original;
+    if(item.kind==="image") {
+      const copy=document.createElement("canvas");
+      copy.width=item.picture.preview.width;copy.height=item.picture.preview.height;
+      copy.getContext("2d").drawImage(item.picture.preview,0,0);
+      item={...item,picture:{...item.picture,preview:copy}};
+    }
+    const element=document.createElement("div");
+    element.className=item.kind==="text"?"slide-text":item.kind==="image"?"slide-picture":"slide-shape";
+    paintSlideElement(element,item);
+    preview.append(element);
+  }
+  find("redesign-preview").replaceChildren(preview);
+  find("redesign-preview").hidden=false;
+}
+
+find("redesign-request").addEventListener("click",async()=>{
+  const context=redesignContext;
+  if(!context || context.started || context.cancelled || redesignPending || !redesignMatches(context))return;
+  context.started=true;
+  context.operation={id:crypto.randomUUID(),page:context.index+1,status:"requesting",requestSent:false,attempts:[],credits:{total:"0",unknown:0}};
+  context.attempt=context.operation;
+  lastRedesignAttempt={deck:context.deck,data:context.operation};
+  redesignPending=true;
+  find("redesign-request").disabled=true;
+  find("redesign-progress").textContent="正在优化页面设计，请稍候……";
+  try {
+    const anna=await getRuntime();
+    if(context.cancelled)return;
+    const result=await runRedesignOperation({slide:context.slide,index:context.index,total:context.deck.slides.length,style:context.style,
+      complete:request=>anna.llm.complete(request),isCancelled:()=>context.cancelled,isCurrent:()=>redesignMatches(context),operation:context.operation,
+      onUpdate:operation=>{
+        lastRedesignAttempt={deck:context.deck,data:operation};
+        context.usage=formatCredits(operation.credits);
+        updateLayoutControls();
+      }});
+    context.usage=formatCredits(result.operation.credits);
+    find("redesign-usage").textContent=context.usage;
+    find("redesign-detail").hidden=!developerMode;
+    if(context.cancelled || redesignContext!==context)return;
+    find("redesign-request").hidden=true;
+    if(result.operation.status!=="candidate") {
+      find("redesign-cancel").textContent="关闭";
+      find("redesign-progress").dataset.kind="error";
+      find("redesign-progress").textContent=redesignFailure+context.usage;
+      redesignMessage(redesignFailure+context.usage,"error");
+      return;
+    }
+    context.candidate=result.candidate;
+    context.response=result.response;
+    showRedesignPreview(context.candidate,context);
+    find("redesign-progress").textContent="候选已生成，尚未应用。"+context.usage;
+    find("redesign-intent").textContent=result.intent;
+    find("redesign-intent").hidden=!developerMode||!result.intent;
+    find("redesign-confirm").hidden=true;
+    find("redesign-apply").hidden=false;
+  } catch(error) {
+    context.operation.status=context.cancelled?"cancelled":"failed";
+    context.operation.reason=error.message;
+    context.usage??=formatCredits(creditSummary(context.operation.attempts));
+    lastRedesignAttempt={deck:context.deck,data:context.operation};
+    if(context.cancelled || redesignContext!==context)return;
+    find("redesign-request").hidden=true;
+    find("redesign-progress").dataset.kind="error";
+    find("redesign-cancel").textContent="关闭";
+    find("redesign-progress").textContent=redesignFailure+(context.usage??"本次积分用量待平台确认。");
+    redesignMessage(find("redesign-progress").textContent,"error");
+  } finally {
+    redesignPending=false;
+    if(context.cancelled && deck===context.deck)redesignMessage(`第 ${context.index+1} 页设计已取消，原稿未更改。${context.usage??"未发起设计调用。"}`);
+    updateLayoutControls();
+  }
+});
+
+find("redesign-apply").addEventListener("click",()=>{
+  const context=redesignContext;
+  if(!context?.candidate || context.cancelled || redesignPending)return;
+  if(!redesignMatches(context)) {
+    find("redesign-progress").dataset.kind="error";
+    context.operation.status="expired";
+    find("redesign-progress").textContent="页面已变化，候选已失效，原稿未更改。"+(context.usage??"");
+    find("redesign-apply").disabled=true;
+    return;
+  }
+  const before=layoutSnapshot(context.slide);
+  try {
+    const original=context.slide.redesignOriginal??visualSnapshot(context.slide);
+    restoreVisual(context.slide,visualSnapshot(context.candidate));
+    context.slide.redesignOriginal=structuredClone(original);
+    context.slide.redesignTrace={rawText:context.response.content.text,model:context.response.model,usage:context.response.usage,
+      quotaConsumed:context.operation.credits.total,attempts:structuredClone(context.operation.attempts),credits:context.operation.credits,operationId:context.operation.id,recordedAt:new Date().toISOString(),customGrid:context.slide.manualLayout==="ai-design"};
+    recordRedesignAttempt(context,"applied");
+    renderSlide();
+    previousLayouts.set(context.slide,before);
+    context.applied=true;
+    redesignContext=undefined;
+    redesignDialog.close();
+    layoutStatus.hidden=true;
+    redesignMessage(`第 ${context.index+1} 页设计已应用，可撤销。${context.usage??""}`,"success");
+    saveCurrentDraft();
+    updateLayoutControls();
+  } catch(error) {
+    recordRedesignAttempt(context,"failed",{error:error.message});
+    restoreLayoutSnapshot(context.slide,before);
+    renderSlide();
+    find("redesign-progress").dataset.kind="error";
+    find("redesign-progress").textContent=redesignFailure+(context.usage??"");
+  }
+});
+
 function updatePictureControls() {
   const slide = deck?.slides[selected];
   const loading = pendingPictures.has(slide);
@@ -690,11 +939,11 @@ function updatePictureControls() {
 }
 
 function finishCurrentTextEdit() {
-  stage.querySelector(".slide-editor-input")?.blur();
+  return stage.querySelector(".slide-editor-input")?.commitEdit() ?? true;
 }
 
 function selectPage(index) {
-  finishCurrentTextEdit();
+  if (!finishCurrentTextEdit()) return;
   selected = index;
   selectedPicture = undefined;
   [...pages.children].forEach((button, i) => button.setAttribute("aria-pressed", String(i === index)));
@@ -707,6 +956,7 @@ function selectPage(index) {
 }
 
 function openDeck(newDeck, id) {
+  find("redesign-status").hidden=true;
   deck = newDeck;
   activeDraft = id;
   pages.replaceChildren(...deck.slides.map((slide, index) => {
@@ -739,16 +989,18 @@ if (hosted) getRuntime().catch(() => {
 notes.addEventListener("input", updateLength);
 pageCount.addEventListener("input", checkPageCount);
 theme.addEventListener("change", () => {
-  finishCurrentTextEdit();
+  if (!finishCurrentTextEdit()) return;
   updateSlideStyle();
   saveCurrentDraft();
 });
 color.addEventListener("input", () => {
+  if (!finishCurrentTextEdit()) return;
   customColor = color.value.slice(1);
   updateSlideStyle();
   saveCurrentDraft();
 });
 resetColor.addEventListener("click", () => {
+  if (!finishCurrentTextEdit()) return;
   customColor = "";
   updateSlideStyle();
   saveCurrentDraft();
@@ -762,14 +1014,14 @@ document.addEventListener("pointerdown", event => {
 newDraft.addEventListener("click", async () => {
   if (!activeDraft && (deck || notes.value.trim() || sources.length || audience.value || instructions.value) &&
       !await confirmReplace("新建空白将清除当前未保存的画布和资料。")) return;
-  finishCurrentTextEdit();
+  if (!finishCurrentTextEdit()) return;
   clearBrief();
   clearCanvas();
   setStatus("");
   closeLibrary();
 });
 saveDraftButton.addEventListener("click", () => {
-  finishCurrentTextEdit();
+  if (!finishCurrentTextEdit()) return;
   activeDraft ??= crypto.randomUUID();
   saveCurrentDraft();
 });
@@ -802,7 +1054,7 @@ pictureFile.addEventListener("change", async () => {
   try {
     const results = await Promise.allSettled(files.map(readSlidePicture));
     if (deck !== current) return;
-    if (selected === index) finishCurrentTextEdit();
+    if (selected === index && !finishCurrentTextEdit()) return;
     const pictures = slide.pictures ??= [];
     const added = [];
     const errors = [];
@@ -835,7 +1087,7 @@ example.addEventListener("click", async () => {
   if (busy || openingDraft || deletingDraft || deleteDialog.open || replaceDialog.open || deck?.slides.some(slide => pendingPictures.has(slide))) return;
   if ((notes.value.trim() && notes.value !== sampleNotes || sources.length || deck) &&
       !await confirmReplace(activeDraft ? "载入示例会清除当前输入资料，已保存的 PPT 可以从「我的 PPT」打开。" : "载入示例会替换当前资料和幻灯片。")) return;
-  finishCurrentTextEdit();
+  if (!finishCurrentTextEdit()) return;
   audience.value = sampleAudience;
   notes.value = sampleNotes;
   pageCount.value = defaultPages;
@@ -844,6 +1096,13 @@ example.addEventListener("click", async () => {
   renderSources();
   openDeck(structuredClone(sampleDeck));
   setStatus("已载入示例。你可以直接修改和下载。");
+});
+
+find("cancel-generation").addEventListener("click",()=>{
+  if(!generationContext)return;
+  generationContext.cancelled=true;
+  find("cancel-generation").disabled=true;
+  setStatus("已取消生成，原稿未更改。已发出请求的积分将在平台返回后汇总。");
 });
 
 form.addEventListener("submit", async event => {
@@ -882,13 +1141,17 @@ form.addEventListener("submit", async event => {
     return;
   }
   if (deck && !activeDraft && !await confirmReplace("生成会打开新稿。要保留当前 PPT，可先在「我的 PPT」中保存。")) return;
-  finishCurrentTextEdit();
+  if (!finishCurrentTextEdit()) return;
   const images = sources.filter(source => source.image).map(source => source.image);
   const documents = sources.filter(source => source.text).map(source => ({ name: source.file.name, text: source.text }));
   const style = { theme: theme.value, accent: themePalette(theme.value, customColor).accent };
   const draftStyle = slideStyle();
   const request = makeRequest({ notes: notes.value, audience: audience.value, pageCount: count, documents, images, instructions: instructions.value, style });
   busy = true;
+  const context={cancelled:false,operation:{}};
+  generationContext=context;
+  find("cancel-generation").hidden=false;
+  find("cancel-generation").disabled=false;
   generate.disabled = true;
   example.disabled = true;
   updatePictureControls();
@@ -899,9 +1162,18 @@ form.addEventListener("submit", async event => {
   let response;
   try {
     const anna = await getRuntime();
-    response = await anna.llm.complete(request);
-    usage = formatUsage(response);
-    const generated = parseDeck(response, count);
+    const result=await runGenerationOperation({request,pages:count,complete:request=>anna.llm.complete(request),operation:context.operation,
+      isCancelled:()=>context.cancelled,isCurrent:()=>generationContext===context,
+      onUpdate:operation=>{lastGenerationOperation=structuredClone(operation);}});
+    response=result.response;
+    usage=formatCredits(result.operation.credits);
+    if(["cancelled","expired"].includes(result.operation.status)){
+      setStatus(`已取消生成，原稿未更改。${usage}`);return;
+    }
+    if(!result.deck)throw result.error??new Error("生成失败");
+    const generated = result.deck;
+    generated.generationTrace = { rawText: response.content.text, model: response.model, usage: response.usage, quotaConsumed: result.operation.credits.total,
+      credits:result.operation.credits,attempts:result.operation.attempts,recordedAt: new Date().toISOString() };
     theme.value = draftStyle.theme;
     customColor = draftStyle.accent;
     openDeck(generated, crypto.randomUUID());
@@ -910,17 +1182,21 @@ form.addEventListener("submit", async event => {
     const review = images.length ? "请核对从图片读取的数字。" : "";
     setStatus(`已生成 ${count} 页。${usage}${review}`, "success");
   } catch (error) {
+    usage ||= formatCredits(creditSummary(context.operation.attempts??[]));
+    if(context.cancelled){setStatus(`已取消生成，原稿未更改。${usage}`);return;}
     if (response && error instanceof Error) showGenerationDiagnostic(response, error, count);
     const code = [error?.data?.errorCode, error?.data?.code, error?.code, error?.message].join(" ");
     if (/APP_MODEL_NOT_VISION_CAPABLE/i.test(code)) {
-      setStatus("当前 Anna 模型无法读取图片。请换用支持视觉的模型，或移除图片后再试。", "error");
+      setStatus("Anna 当前无法读取图片，请移除图片后再试。"+usage, "error");
     } else if (/quota|429|credit|insufficient/i.test(code)) {
-      setStatus("Anna 额度不足，请检查余额后再试。已有稿件仍可编辑和下载。", "error");
+      setStatus("Anna 积分不足，请检查余额后再试。已有稿件仍可编辑和下载。"+usage, "error");
     } else {
-      const detail = error instanceof Error && /^Anna |^第 /.test(error.message) ? error.message : "无法连接 Anna 或生成暂时失败，可以稍后手动重试。";
+      const detail = response?.stopReason==="maxTokens" ? "Anna 返回内容被截断，原稿未更改。" : error instanceof Error && /^Anna |^第 /.test(error.message) ? error.message : "无法连接 Anna 或生成暂时失败，可以稍后手动重试。";
       setStatus(detail + usage, "error");
     }
   } finally {
+    if(generationContext===context)generationContext=undefined;
+    find("cancel-generation").hidden=true;
     busy = false;
     generate.disabled = false;
     example.disabled = false;
@@ -930,7 +1206,7 @@ form.addEventListener("submit", async event => {
 
 download.addEventListener("click", async () => {
   if (!deck || download.disabled) return;
-  finishCurrentTextEdit();
+  if (!finishCurrentTextEdit()) return;
   exporting = true;
   updatePictureControls();
   try {

@@ -1,0 +1,214 @@
+TAP version 13
+# Subtest: M1.1 reads each input type and submits document plus image in one request
+ok 1 - M1.1 reads each input type and submits document plus image in one request
+  ---
+  duration_ms: 2452.2638
+  type: 'test'
+  ...
+# Subtest: M1.4 exposes an accessible picker and one consistent list after choosing or re-choosing
+ok 2 - M1.4 exposes an accessible picker and one consistent list after choosing or re-choosing
+  ---
+  duration_ms: 536.3258
+  type: 'test'
+  ...
+# Subtest: M1.5 starts compact, exposes errors, and submits attached sources while collapsed
+ok 3 - M1.5 starts compact, exposes errors, and submits attached sources while collapsed
+  ---
+  duration_ms: 1045.2689
+  type: 'test'
+  ...
+# Subtest: M1.3 reports invalid page counts at the field before Generate
+ok 4 - M1.3 reports invalid page counts at the field before Generate
+  ---
+  duration_ms: 692.0877
+  type: 'test'
+  ...
+# Subtest: M1.2 and M1.3 block invalid material, over-limit files, and invalid page counts
+ok 5 - M1.2 and M1.3 block invalid material, over-limit files, and invalid page counts
+  ---
+  duration_ms: 1840.5431
+  type: 'test'
+  ...
+# Subtest: M8.1 reads Chinese PDF pages and reuses the single mixed-source generation request
+ok 6 - M8.1 reads Chinese PDF pages and reuses the single mixed-source generation request
+  ---
+  duration_ms: 1193.1654
+  type: 'test'
+  ...
+# Subtest: M8.2 distinguishes PDF errors and preserves good pages in mixed PDFs
+ok 7 - M8.2 distinguishes PDF errors and preserves good pages in mixed PDFs
+  ---
+  duration_ms: 3052.1343
+  type: 'test'
+  ...
+# Subtest: M2.1, M2.2 and M3.2 preserve inputs and draft on cancel and host failures
+ok 8 - M2.1, M2.2 and M3.2 preserve inputs and draft on cancel and host failures
+  ---
+  duration_ms: 1131.2826
+  type: 'test'
+  ...
+# Subtest: M2.4 applies the same varied templates to the example and simulated generated deck
+ok 9 - M2.4 applies the same varied templates to the example and simulated generated deck
+  ---
+  duration_ms: 961.9251
+  type: 'test'
+  ...
+# Subtest: V1 relation fixtures preserve real source text, use proportional graphics, switch layouts and restore without Anna
+ok 10 - V1 relation fixtures preserve real source text, use proportional graphics, switch layouts and restore without Anna
+  ---
+  duration_ms: 3359.2585
+  type: 'test'
+  ...
+# Subtest: V1 editing the source rebuilds safely, preserves pictures and cannot revive stale calculations
+ok 11 - V1 editing the source rebuilds safely, preserves pictures and cannot revive stale calculations
+  ---
+  duration_ms: 1414.5931
+  type: 'test'
+  ...
+# Subtest: V1 zero baseline, over-completion and invalid relations remain explicit and export safely
+ok 12 - V1 zero baseline, over-completion and invalid relations remain explicit and export safely
+  ---
+  duration_ms: 2090.0287
+  type: 'test'
+  ...
+# Subtest: V1 cross-page components keep narrative priority, offer only compatible P2 choices and export
+ok 13 - V1 cross-page components keep narrative priority, offer only compatible P2 choices and export
+  ---
+  duration_ms: 3180.2707
+  type: 'test'
+  ...
+# Subtest: V1 non-metrics source edits disable the component while preserving the main risk
+ok 14 - V1 non-metrics source edits disable the component while preserving the main risk
+  ---
+  duration_ms: 873.9348
+  type: 'test'
+  ...
+# Subtest: V1 long source points and two auxiliary points fit both preview sizes and export
+ok 15 - V1 long source points and two auxiliary points fit both preview sizes and export
+  ---
+  duration_ms: 989.336
+  type: 'test'
+  ...
+# Subtest: D1 replays the complete mentor response and keeps the four stages in order
+ok 16 - D1 replays the complete mentor response and keeps the four stages in order
+  ---
+  duration_ms: 696.4291
+  type: 'test'
+  ...
+# Subtest: D1.2 all one-to-six long points and twelve short points fit without dropping content
+ok 17 - D1.2 all one-to-six long points and twelve short points fit without dropping content
+  ---
+  duration_ms: 1426.6433
+  type: 'test'
+  ...
+# Subtest: D1.4 adaptive switching, edit, undo and saved restore retain all four stages
+ok 18 - D1.4 adaptive switching, edit, undo and saved restore retain all four stages
+  ---
+  duration_ms: 1126.1
+  type: 'test'
+  ...
+# Subtest: D1.3 an unrenderable edit remains in the input and cannot overwrite a saved draft
+ok 19 - D1.3 an unrenderable edit remains in the input and cannot overwrite a saved draft
+  ---
+  duration_ms: 662.0352
+  type: 'test'
+  ...
+# Subtest: P2.1–P2.4 switches sample metrics, commits active edits, preserves pictures and reopens saved layouts without Anna
+ok 20 - P2.1–P2.4 switches sample metrics, commits active edits, preserves pictures and reopens saved layouts without Anna
+  ---
+  duration_ms: 1629.893
+  type: 'test'
+  ...
+# Subtest: P2 local seeded history offers three compatible choices, keeps per-page undo and ignores invalid overrides
+ok 21 - P2 local seeded history offers three compatible choices, keeps per-page undo and ignores invalid overrides
+  ---
+  duration_ms: 1669.8391
+  type: 'test'
+  ...
+# Subtest: P2 failed local switch retains the previous layout and content
+ok 22 - P2 failed local switch retains the previous layout and content
+  ---
+  duration_ms: 687.2091
+  type: 'test'
+  ...
+# Subtest: P2 all six 56-character layout variants fit narrow preview and export natively
+ok 23 - P2 all six 56-character layout variants fit narrow preview and export natively
+  ---
+  duration_ms: 1035.61
+  type: 'test'
+  ...
+# Subtest: P1.2 migration excerpt with simulated lead keeps evidence, editable export and bounds
+ok 24 - P1.2 migration excerpt with simulated lead keeps evidence, editable export and bounds
+  ---
+  duration_ms: 775.4356
+  type: 'test'
+  ...
+# Subtest: P1.1 replays real metrics and recommendation, and downloads failed-cover diagnostics
+ok 25 - P1.1 replays real metrics and recommendation, and downloads failed-cover diagnostics
+  ---
+  duration_ms: 1413.7818
+  type: 'test'
+  ...
+# Subtest: P1 renders the chosen lead as the most prominent evidence and keeps it editable
+ok 26 - P1 renders the chosen lead as the most prominent evidence and keeps it editable
+  ---
+  duration_ms: 873.5471
+  type: 'test'
+  ...
+# Subtest: M5.1–M5.2 render, edit and export an evidence comparison and a migration timeline
+ok 27 - M5.1–M5.2 render, edit and export an evidence comparison and a migration timeline
+  ---
+  duration_ms: 1281.2922
+  type: 'test'
+  ...
+# Subtest: M1.6 and M2.5 update local styling and send style and optional instructions on Generate
+ok 28 - M1.6 and M2.5 update local styling and send style and optional instructions on Generate
+  ---
+  duration_ms: 1036.9161
+  type: 'test'
+  ...
+# Subtest: M3.3 and M4.3 edit directly on the canvas and export the saved content
+ok 29 - M3.3 and M4.3 edit directly on the canvas and export the saved content
+  ---
+  duration_ms: 904.6004
+  type: 'test'
+  ...
+# Subtest: M3.4 and M4.4 edit independent pictures and export their geometry without calling Anna
+ok 30 - M3.4 and M4.4 edit independent pictures and export their geometry without calling Anna
+  ---
+  duration_ms: 2033.282
+  type: 'test'
+  ...
+# Subtest: M6.1 restores independent generated drafts, including pictures, after refresh
+ok 31 - M6.1 restores independent generated drafts, including pictures, after refresh
+  ---
+  duration_ms: 1475.8148
+  type: 'test'
+  ...
+# Subtest: M6.2 leaves sample saving explicit and retains in-memory drafts when storage is full
+ok 32 - M6.2 leaves sample saving explicit and retains in-memory drafts when storage is full
+  ---
+  duration_ms: 1002.2282
+  type: 'test'
+  ...
+# Subtest: M6.3 deletes only the confirmed draft and retains it if storage rejects the deletion
+ok 33 - M6.3 deletes only the confirmed draft and retains it if storage rejects the deletion
+  ---
+  duration_ms: 1081.6586
+  type: 'test'
+  ...
+# Subtest: M3.1, M4.1 and M4.2 keep preview, paging and actual downloads consistent
+ok 34 - M3.1, M4.1 and M4.2 keep preview, paging and actual downloads consistent
+  ---
+  duration_ms: 2058.5369
+  type: 'test'
+  ...
+1..34
+# tests 34
+# suites 0
+# pass 34
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 48765.9113

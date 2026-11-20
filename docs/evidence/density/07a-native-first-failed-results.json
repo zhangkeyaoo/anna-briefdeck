@@ -1,0 +1,27 @@
+[
+  {
+    "file": "mentor-real-replay",
+    "textEditable": true,
+    "pages": 6,
+    "textObjects": 42,
+    "shapeEditable": true,
+    "issues": [
+      {
+        "boxWidth": 327.78,
+        "page": 3,
+        "boxHeight": 97.62,
+        "height": 38.4,
+        "width": 336.0,
+        "text": "人力资源部门：制定基本规则、组织导师培训、收集反馈并协调共性问题"
+      }
+    ]
+  },
+  {
+    "file": "density-boundaries",
+    "textEditable": true,
+    "pages": 7,
+    "textObjects": 58,
+    "shapeEditable": true,
+    "issues": []
+  }
+]

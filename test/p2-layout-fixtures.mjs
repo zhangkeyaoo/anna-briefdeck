@@ -14,6 +14,6 @@ export const boundarySummary = {
 };
 
 export function boundaryLayoutDeck() {
-  return { slides: [structuredClone(sampleDeck.slides[0]), ...[boundaryMetrics, boundarySummary].flatMap(slide =>
-    layoutOptions(slide, 1).map(option => withLayoutChoice(slide, 1, 7, option.id)))] };
+  const variants = [boundaryMetrics, boundarySummary].flatMap(slide => layoutOptions(slide, 1).map(option => ({ slide, choice: option.id })));
+  return { slides: [structuredClone(sampleDeck.slides[0]), ...variants.map(({slide, choice}, i) => withLayoutChoice(slide, i + 1, variants.length + 1, choice))] };
 }

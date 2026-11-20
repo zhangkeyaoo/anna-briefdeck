@@ -1,0 +1,212 @@
+
+> anna-briefdeck@0.1.0 test
+> node --test test/deck.test.mjs
+
+TAP version 13
+# Subtest: V2 relationships express explicit roles and ordered steps, preserve full native source and decline guesses
+ok 1 - V2 relationships express explicit roles and ordered steps, preserve full native source and decline guesses
+  ---
+  duration_ms: 178.7508
+  type: 'test'
+  ...
+# Subtest: V2 main and auxiliary metrics require exact provenance, retain priority, and expire after edits
+ok 2 - V2 main and auxiliary metrics require exact provenance, retain priority, and expire after edits
+  ---
+  duration_ms: 10.5956
+  type: 'test'
+  ...
+# Subtest: V2 diagnostics separate raw model fields from actual rendering and explain decline reasons
+ok 3 - V2 diagnostics separate raw model fields from actual rendering and explain decline reasons
+  ---
+  duration_ms: 13.548
+  type: 'test'
+  ...
+# Subtest: D1.8 focus is numbered 01 and every layout preserves source numbering and complete editable text
+ok 4 - D1.8 focus is numbered 01 and every layout preserves source numbering and complete editable text
+  ---
+  duration_ms: 146.9049
+  type: 'test'
+  ...
+# Subtest: D1.1 mentor real JSON retains all four stages and rejects only invalid design
+ok 5 - D1.1 mentor real JSON retains all four stages and rejects only invalid design
+  ---
+  duration_ms: 2.8224
+  type: 'test'
+  ...
+# Subtest: D1.2 and D1.5 preserve every point across densities, choices, storage and native export
+ok 6 - D1.2 and D1.5 preserve every point across densities, choices, storage and native export
+  ---
+  duration_ms: 228.9913
+  type: 'test'
+  ...
+# Subtest: D1.3 capacity errors preserve original input and do not relax structural contracts
+ok 7 - D1.3 capacity errors preserve original input and do not relax structural contracts
+  ---
+  duration_ms: 4.3657
+  type: 'test'
+  ...
+# Subtest: D1.7 writing targets are prompt guidance, not title or point rejection rules
+ok 8 - D1.7 writing targets are prompt guidance, not title or point rejection rules
+  ---
+  duration_ms: 8.367
+  type: 'test'
+  ...
+# Subtest: D1.6 role responsibilities use independent points without losing original duties
+ok 9 - D1.6 role responsibilities use independent points without losing original duties
+  ---
+  duration_ms: 7.9159
+  type: 'test'
+  ...
+# Subtest: V1.6 any body page may carry valid metrics while narrative regions retain priority
+ok 10 - V1.6 any body page may carry valid metrics while narrative regions retain priority
+  ---
+  duration_ms: 47.3269
+  type: 'test'
+  ...
+# Subtest: V1.7 target comparisons show a gap rather than a temporal improvement
+ok 11 - V1.7 target comparisons show a gap rather than a temporal improvement
+  ---
+  duration_ms: 3.315
+  type: 'test'
+  ...
+# Subtest: V1.1 optional metrics bind exact source fragments without changing old decks or facts
+ok 12 - V1.1 optional metrics bind exact source fragments without changing old decks or facts
+  ---
+  duration_ms: 2.0163
+  type: 'test'
+  ...
+# Subtest: V1.2 comparisons use a shared scale and handle zero baselines and mixed units safely
+ok 13 - V1.2 comparisons use a shared scale and handle zero baselines and mixed units safely
+  ---
+  duration_ms: 4.4571
+  type: 'test'
+  ...
+# Subtest: V1.3 completion rates agree with counts, do not turn arbitrary percentages into progress
+ok 14 - V1.3 completion rates agree with counts, do not turn arbitrary percentages into progress
+  ---
+  duration_ms: 2.5662
+  type: 'test'
+  ...
+# Subtest: V1.4 edits invalidate source-bound metrics irreversibly across layout undo and saved history
+ok 15 - V1.4 edits invalidate source-bound metrics irreversibly across layout undo and saved history
+  ---
+  duration_ms: 1.8188
+  type: 'test'
+  ...
+# Subtest: V1.5 relation choices export native proportional shapes and preserve every point
+ok 16 - V1.5 relation choices export native proportional shapes and preserve every point
+  ---
+  duration_ms: 81.5709
+  type: 'test'
+  ...
+# Subtest: P2.1 lists compatible local choices and preserves content and original design
+ok 17 - P2.1 lists compatible local choices and preserves content and original design
+  ---
+  duration_ms: 9.2149
+  type: 'test'
+  ...
+# Subtest: P2.3–P2.4 local layout survives history and exports shared native geometry
+ok 18 - P2.3–P2.4 local layout survives history and exports shared native geometry
+  ---
+  duration_ms: 45.9667
+  type: 'test'
+  ...
+# Subtest: P1.2 explicit metric grammar preserves migration scope and falls back on ambiguous comparisons
+ok 19 - P1.2 explicit metric grammar preserves migration scope and falls back on ambiguous comparisons
+  ---
+  duration_ms: 7.9983
+  type: 'test'
+  ...
+# Subtest: P1.1 replays the real six-page response and preserves every original point
+ok 20 - P1.1 replays the real six-page response and preserves every original point
+  ---
+  duration_ms: 8.4243
+  type: 'test'
+  ...
+# Subtest: P1.1 keeps strict cover contracts and permits no guesses about unlabelled decisions
+ok 21 - P1.1 keeps strict cover contracts and permits no guesses about unlabelled decisions
+  ---
+  duration_ms: 0.7382
+  type: 'test'
+  ...
+# Subtest: P1 moves the emphasis with Anna's lead and keeps original facts and legacy layouts
+ok 22 - P1 moves the emphasis with Anna's lead and keeps original facts and legacy layouts
+  ---
+  duration_ms: 8.9919
+  type: 'test'
+  ...
+# Subtest: M1.3 validates integer page counts from 4 through 12
+ok 23 - M1.3 validates integer page counts from 4 through 12
+  ---
+  duration_ms: 0.2727
+  type: 'test'
+  ...
+# Subtest: M2.1 accepts plain and fenced model JSON with the chosen length
+ok 24 - M2.1 accepts plain and fenced model JSON with the chosen length
+  ---
+  duration_ms: 0.9658
+  type: 'test'
+  ...
+# Subtest: M2.1 rejects truncated, filtered, malformed or incorrectly sized decks
+ok 25 - M2.1 rejects truncated, filtered, malformed or incorrectly sized decks
+  ---
+  duration_ms: 0.5643
+  type: 'test'
+  ...
+# Subtest: M1.1 and M2.2 use one bounded request with text, document and image
+ok 26 - M1.1 and M2.2 use one bounded request with text, document and image
+  ---
+  duration_ms: 0.4
+  type: 'test'
+  ...
+# Subtest: M2.4 renders distinct semantic layouts, preserves source metrics and falls back for unknown layouts
+ok 27 - M2.4 renders distinct semantic layouts, preserves source metrics and falls back for unknown layouts
+  ---
+  duration_ms: 7.6608
+  type: 'test'
+  ...
+# Subtest: M5.1–M5.2 validate flexible geometry and export it as native text and shapes
+ok 28 - M5.1–M5.2 validate flexible geometry and export it as native text and shapes
+  ---
+  duration_ms: 9.7398
+  type: 'test'
+  ...
+# Subtest: M1.6 and M2.5 send style and optional instructions in one bounded request
+ok 29 - M1.6 and M2.5 send style and optional instructions in one bounded request
+  ---
+  duration_ms: 6.0855
+  type: 'test'
+  ...
+# Subtest: M5.3 keeps text contrast on large areas derived from custom colors
+ok 30 - M5.3 keeps text contrast on large areas derived from custom colors
+  ---
+  duration_ms: 0.9178
+  type: 'test'
+  ...
+# Subtest: M3.4 keeps text layout while bounding and scaling independent pictures
+ok 31 - M3.4 keeps text layout while bounding and scaling independent pictures
+  ---
+  duration_ms: 1.1698
+  type: 'test'
+  ...
+# Subtest: M4.1 writes edited native text and correct page counts for 4, 6 and 12 slides
+ok 32 - M4.1 writes edited native text and correct page counts for 4, 6 and 12 slides
+  ---
+  duration_ms: 26.8714
+  type: 'test'
+  ...
+# Subtest: M4.2 exports boundary-length titles and points using native text
+ok 33 - M4.2 exports boundary-length titles and points using native text
+  ---
+  duration_ms: 4.7397
+  type: 'test'
+  ...
+1..33
+# tests 33
+# suites 0
+# pass 33
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1173.7526

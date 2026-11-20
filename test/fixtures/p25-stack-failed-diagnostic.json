@@ -1,0 +1,461 @@
+{
+  "latestSinglePageAttempt": {
+    "page": 3,
+    "recordedAt": "2026-11-20T03:50:36.246Z",
+    "requestSent": true,
+    "status": "cancelled",
+    "model": "xiaomi/mimo-v2.5",
+    "usage": {
+      "inputTokens": 833,
+      "outputTokens": 10,
+      "totalTokens": 843,
+      "reasoningTokens": 0
+    },
+    "quotaConsumed": 0.10258620689655172,
+    "rawDesign": "{\"composition\":\"stack\",\"lead\":0}",
+    "error": "重点索引或页面语义不兼容。"
+  },
+  "source": "有原始模型回执；返回字段与实际呈现分开核对，生成成功不代表新组件已采用",
+  "generation": {
+    "model": "xiaomi/mimo-v2.5",
+    "usage": {
+      "inputTokens": 2165,
+      "totalTokens": 3330,
+      "outputTokens": 1165,
+      "reasoningTokens": 0
+    },
+    "quotaConsumed": 0.5422413793103448,
+    "recordedAt": "2026-11-20T02:48:02.316Z"
+  },
+  "pages": [
+    {
+      "page": 1,
+      "title": "客户服务平台升级项目阶段汇报",
+      "pointCount": 1,
+      "modelReturned": {},
+      "manualLayout": "自动",
+      "appliedComponents": [
+        "封面"
+      ],
+      "relationship": {
+        "detected": null,
+        "applied": false,
+        "reason": "没有从第一步开始的明确连续步骤，不推断流程依赖"
+      },
+      "mainMetric": {
+        "present": false,
+        "valid": false,
+        "applied": false,
+        "reason": "缺失/非法/来源已修改；不猜测指标"
+      },
+      "auxiliaries": [],
+      "ignoredAuxiliaryCount": 0,
+      "removedAfterEdit": []
+    },
+    {
+      "page": 2,
+      "title": "试点工单完成率85%，两项指标低于目标",
+      "pointCount": 5,
+      "modelReturned": {
+        "layout": "metrics",
+        "lead": 0,
+        "metric": {
+          "kind": "completion",
+          "point": 0,
+          "label": "工单处理完成率",
+          "unit": "单",
+          "values": [
+            "已处理680单",
+            "收到客户工单800单"
+          ],
+          "rate": "85%"
+        },
+        "metrics": [
+          {
+            "kind": "comparison",
+            "point": 2,
+            "label": "自动分类准确率",
+            "unit": "％",
+            "values": [
+              "当前92%",
+              "阶段目标95%"
+            ],
+            "rate": null,
+            "basis": "target"
+          },
+          {
+            "kind": "comparison",
+            "point": 3,
+            "label": "客户满意度",
+            "unit": "％",
+            "values": [
+              "当前91%",
+              "目标93%"
+            ],
+            "rate": null,
+            "basis": "target"
+          }
+        ],
+        "design": [
+          [
+            0,
+            "text",
+            0,
+            0,
+            4,
+            5
+          ],
+          [
+            1,
+            "text",
+            4,
+            0,
+            4,
+            5
+          ],
+          [
+            2,
+            "text",
+            8,
+            0,
+            4,
+            5
+          ],
+          [
+            3,
+            "text",
+            0,
+            5,
+            4,
+            5
+          ],
+          [
+            4,
+            "text",
+            4,
+            5,
+            4,
+            5
+          ]
+        ]
+      },
+      "manualLayout": "自动",
+      "appliedComponents": [
+        "原有文字/设计布局"
+      ],
+      "relationship": {
+        "detected": null,
+        "applied": false,
+        "reason": "保留指标、风险或决策主叙事"
+      },
+      "mainMetric": {
+        "present": true,
+        "valid": false,
+        "applied": false,
+        "reason": "缺失/非法/来源已修改；不猜测指标"
+      },
+      "auxiliaries": [
+        {
+          "point": 2,
+          "kind": "comparison",
+          "valid": true,
+          "applied": false,
+          "reason": "重复来源或未保留有效辅助指标"
+        },
+        {
+          "point": 3,
+          "kind": "comparison",
+          "valid": true,
+          "applied": false,
+          "reason": "重复来源或未保留有效辅助指标"
+        }
+      ],
+      "ignoredAuxiliaryCount": 0,
+      "removedAfterEdit": []
+    },
+    {
+      "page": 3,
+      "title": "当前发现10项问题，3项为高优先级",
+      "pointCount": 5,
+      "modelReturned": {
+        "layout": "risk",
+        "lead": 0,
+        "design": [
+          [
+            0,
+            "focus",
+            0,
+            0,
+            4,
+            5
+          ],
+          [
+            1,
+            "text",
+            4,
+            0,
+            4,
+            5
+          ],
+          [
+            2,
+            "text",
+            8,
+            0,
+            4,
+            5
+          ],
+          [
+            3,
+            "text",
+            0,
+            5,
+            4,
+            5
+          ],
+          [
+            4,
+            "text",
+            4,
+            5,
+            4,
+            5
+          ]
+        ]
+      },
+      "manualLayout": "自动",
+      "appliedComponents": [
+        "原有文字/设计布局"
+      ],
+      "relationship": {
+        "detected": null,
+        "applied": false,
+        "reason": "保留指标、风险或决策主叙事"
+      },
+      "mainMetric": {
+        "present": false,
+        "valid": false,
+        "applied": false,
+        "reason": "缺失/非法/来源已修改；不猜测指标"
+      },
+      "auxiliaries": [],
+      "ignoredAuxiliaryCount": 0,
+      "removedAfterEdit": []
+    },
+    {
+      "page": 4,
+      "title": "五类角色分别承担需求、研发、测试与协调职责",
+      "pointCount": 5,
+      "modelReturned": {
+        "layout": "summary",
+        "design": [
+          [
+            0,
+            "text",
+            0,
+            0,
+            4,
+            5
+          ],
+          [
+            1,
+            "text",
+            4,
+            0,
+            4,
+            5
+          ],
+          [
+            2,
+            "text",
+            8,
+            0,
+            4,
+            5
+          ],
+          [
+            3,
+            "text",
+            0,
+            5,
+            4,
+            5
+          ],
+          [
+            4,
+            "text",
+            4,
+            5,
+            4,
+            5
+          ]
+        ]
+      },
+      "manualLayout": "relation-roles",
+      "appliedComponents": [
+        "relation-roles"
+      ],
+      "relationship": {
+        "detected": "relation-roles",
+        "applied": true,
+        "reason": "主题与逐条角色：职责结构均明确"
+      },
+      "mainMetric": {
+        "present": false,
+        "valid": false,
+        "applied": false,
+        "reason": "缺失/非法/来源已修改；不猜测指标"
+      },
+      "auxiliaries": [],
+      "ignoredAuxiliaryCount": 0,
+      "removedAfterEdit": []
+    },
+    {
+      "page": 5,
+      "title": "四步按序执行，后步使用前步最新结果",
+      "pointCount": 5,
+      "modelReturned": {
+        "layout": "progress",
+        "design": [
+          [
+            0,
+            "milestone",
+            0,
+            0,
+            4,
+            6
+          ],
+          [
+            1,
+            "milestone",
+            4,
+            0,
+            4,
+            6
+          ],
+          [
+            2,
+            "milestone",
+            8,
+            0,
+            4,
+            6
+          ],
+          [
+            3,
+            "milestone",
+            0,
+            6,
+            4,
+            6
+          ],
+          [
+            4,
+            "text",
+            4,
+            6,
+            4,
+            6
+          ]
+        ]
+      },
+      "manualLayout": "自动",
+      "appliedComponents": [
+        "relation-sequence",
+        "relation-supplement"
+      ],
+      "relationship": {
+        "detected": "relation-sequence",
+        "applied": true,
+        "reason": "原文明确连续步骤；独立补充保留但不接入流程"
+      },
+      "mainMetric": {
+        "present": false,
+        "valid": false,
+        "applied": false,
+        "reason": "缺失/非法/来源已修改；不猜测指标"
+      },
+      "auxiliaries": [],
+      "ignoredAuxiliaryCount": 0,
+      "removedAfterEdit": []
+    },
+    {
+      "page": 6,
+      "title": "当前建议暂不全面上线，先修复并复评",
+      "pointCount": 7,
+      "modelReturned": {
+        "layout": "decision",
+        "lead": 0,
+        "design": [
+          [
+            0,
+            "focus",
+            0,
+            0,
+            4,
+            5
+          ],
+          [
+            1,
+            "text",
+            4,
+            0,
+            4,
+            5
+          ],
+          [
+            2,
+            "text",
+            8,
+            0,
+            4,
+            5
+          ],
+          [
+            3,
+            "text",
+            0,
+            5,
+            4,
+            5
+          ],
+          [
+            4,
+            "text",
+            4,
+            5,
+            4,
+            5
+          ],
+          [
+            5,
+            "text",
+            8,
+            5,
+            4,
+            5
+          ]
+        ]
+      },
+      "manualLayout": "density-grid",
+      "appliedComponents": [
+        "原有文字/设计布局"
+      ],
+      "relationship": {
+        "detected": null,
+        "applied": false,
+        "reason": "保留指标、风险或决策主叙事"
+      },
+      "mainMetric": {
+        "present": false,
+        "valid": false,
+        "applied": false,
+        "reason": "缺失/非法/来源已修改；不猜测指标"
+      },
+      "auxiliaries": [],
+      "ignoredAuxiliaryCount": 0,
+      "removedAfterEdit": []
+    }
+  ],
+  "originalModelText": "```json\n{\"slides\":[\n{\"title\":\"客户服务平台升级项目阶段汇报\",\"points\":[\"汇报日期：2026年11月20日｜试点阶段，尚未全面上线\"]},\n{\"title\":\"试点工单完成率85%，两项指标低于目标\",\"points\":[\"本周收到客户工单800单，已处理680单，剩余120单，工单处理完成率85%\",\"首次响应时间中位数由升级前15分钟下降至9分钟，缩短40%\",\"自动分类准确率当前92%，阶段目标95%，仍低于目标3个百分点\",\"客户满意度当前91%，目标93%，仍低于目标2个百分点\",\"数据仅反映售后咨询组、账户支持组共30名客服人员的试点范围，不代表全部客服业务\"],\"layout\":\"metrics\",\"lead\":0,\"metric\":{\"kind\":\"completion\",\"point\":0,\"label\":\"工单处理完成率\",\"unit\":\"单\",\"values\":[\"已处理680单\",\"收到客户工单800单\"],\"rate\":\"85%\"},\"metrics\":[{\"kind\":\"comparison\",\"point\":2,\"label\":\"自动分类准确率\",\"unit\":\"％\",\"values\":[\"当前92%\",\"阶段目标95%\"],\"rate\":null,\"basis\":\"target\"},{\"kind\":\"comparison\",\"point\":3,\"label\":\"客户满意度\",\"unit\":\"％\",\"values\":[\"当前91%\",\"目标93%\"],\"rate\":null,\"basis\":\"target\"}],\"design\":[[0,\"text\",0,0,4,5],[1,\"text\",4,0,4,5],[2,\"text\",8,0,4,5],[3,\"text\",0,5,4,5],[4,\"text\",4,5,4,5]]},\n{\"title\":\"当前发现10项问题，3项为高优先级\",\"points\":[\"本轮共发现10项问题，其中3项为高优先级问题，仍有3项高优先级问题未完成修复\",\"复杂工单涉及多个业务类别，自动分类容易出现错误\",\"部分跨部门工单仍需人工转交，处理时间较长\",\"知识库中部分标准答案尚未更新，可能影响客服回复质量\",\"系统异常提醒不够及时，部分问题需要人工发现\"],\"layout\":\"risk\",\"lead\":0,\"design\":[[0,\"focus\",0,0,4,5],[1,\"text\",4,0,4,5],[2,\"text\",8,0,4,5],[3,\"text\",0,5,4,5],[4,\"text\",4,5,4,5]]},\n{\"title\":\"五类角色分别承担需求、研发、测试与协调职责\",\"points\":[\"产品负责人：明确需求优先级，确认试点验收标准与上线条件\",\"研发负责人：负责系统功能修复、性能优化与技术风险评估\",\"客服主管：组织业务测试，检查分类结果并收集客服人员反馈\",\"数据分析师：统计响应时间、分类准确率、工单完成率和满意度\",\"项目经理：协调各部门进度，跟踪问题清单并推动阶段决策\"],\"layout\":\"summary\",\"design\":[[0,\"text\",0,0,4,5],[1,\"text\",4,0,4,5],[2,\"text\",8,0,4,5],[3,\"text\",0,5,4,5],[4,\"text\",4,5,4,5]]},\n{\"title\":\"四步按序执行，后步使用前步最新结果\",\"points\":[\"第一步，11月21日前：研发团队修复3项高优先级问题\",\"第二步，11月23日前：客服主管组织分类规则回归测试，重点检查复杂工单\",\"第三步，11月25日前：数据分析师完成第二轮指标评估，核对分类准确率与客户满意度是否达到目标\",\"第四步，11月27日前：项目经理组织阶段验收会议，根据测试结果决定是否扩大试点\",\"四项上线检查要求并列核对，不存在先后依赖：数据安全、系统稳定性、业务准确性、人员准备\"],\"layout\":\"progress\",\"design\":[[0,\"milestone\",0,0,4,6],[1,\"milestone\",4,0,4,6],[2,\"milestone\",8,0,4,6],[3,\"milestone\",0,6,4,6],[4,\"text\",4,6,4,6]]},\n{\"title\":\"当前建议暂不全面上线，先修复并复评\",\"points\":[\"当前建议：暂不全面上线，先完成高优先级问题修复和第二轮指标评估\",\"风险：分类准确率92%尚未达到95%的阶段目标，过早推广可能增加人工纠错工作量\",\"风险：仅覆盖两个客服业务组共30名客服人员，试点效果不能直接代表全部业务\",\"风险：仍有3项高优先级问题未完成修复，全面上线条件尚不充分\",\"待决策：是否同意11月27日作为阶段验收节点\",\"待决策：是否要求分类准确率达到95%后再扩大试点\",\"待决策：是否同意暂时保留人工复核机制\"],\"layout\":\"decision\",\"lead\":0,\"design\":[[0,\"focus\",0,0,4,5],[1,\"text\",4,0,4,5],[2,\"text\",8,0,4,5],[3,\"text\",0,5,4,5],[4,\"text\",4,5,4,5],[5,\"text\",8,5,4,5]]}\n]}\n```"
+}
